@@ -1119,7 +1119,13 @@ export function extractZaiUsageFromPayload(payload: unknown, nowMs = Date.now())
   const limits = arrays.find(Array.isArray) as any[] | undefined;
   if (!limits?.length) return null;
 
-  const tokenLimits = limits.filter((entry) => String(entry?.type || "").toUpperCase() === "TOKENS_LIMIT");
+  // CREDIT_LIMIT (GLM Coding Plan "lite"/credit-based tiers) reports the same
+  // unit/percentage/nextResetTime shape as TOKENS_LIMIT, so treat both as the
+  // quota windows for session (unit 3) and weekly (unit 6).
+  const tokenLimits = limits.filter((entry) => {
+    const type = String(entry?.type || "").toUpperCase();
+    return type === "TOKENS_LIMIT" || type === "CREDIT_LIMIT";
+  });
   const sessionEntry = tokenLimits.find((entry) => entry?.unit === 3);
   const weeklyEntry = tokenLimits.find((entry) => entry?.unit === 6);
   if (!sessionEntry || !weeklyEntry) return null;
