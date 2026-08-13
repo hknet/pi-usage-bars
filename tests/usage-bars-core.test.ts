@@ -546,6 +546,20 @@ describe("provider fetchers", () => {
     expect(usage).toMatchObject({ session: 29, weekly: 5 });
   });
 
+  it("parses credit-based ZAI plan limits", () => {
+    const now = Date.now();
+    const usage = extractZaiUsageFromPayload({ data: { limits: [
+      { type: "CREDIT_LIMIT", unit: 3, percentage: 42, nextResetTime: now + 3600000 },
+      { type: "CREDIT_LIMIT", unit: 6, percentage: 17, nextResetTime: now + 86400000 },
+    ] } }, now);
+    expect(usage).toMatchObject({
+      session: 42,
+      weekly: 17,
+      sessionResetsIn: "1h",
+      weeklyResetsIn: "1d",
+    });
+  });
+
   it("uses separate ZAI Global and China endpoints", async () => {
     const urls: string[] = [];
     const fetchFn: FetchLike = async (url) => {
