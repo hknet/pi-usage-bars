@@ -38,7 +38,7 @@ function createHarness(): Harness {
 function createContext(
   mode: "tui" | "rpc" | "json" | "print",
   provider = "openai",
-  options: { configured?: boolean; source?: string; token?: string } = {},
+  options: { configured?: boolean; source?: string; token?: string; authHeaders?: Record<string, string> } = {},
 ) {
   const statuses: Array<string | undefined> = [];
   const notifications: string[] = [];
@@ -63,9 +63,13 @@ function createContext(
       getProviderAuthStatus: () => ({ configured: options.configured ?? false }),
       getProviderAuth: async () => {
         authCalls += 1;
-        return options.token
-          ? { auth: { apiKey: options.token }, source: options.source }
-          : undefined;
+        if (options.token) {
+          return { auth: { apiKey: options.token }, source: options.source };
+        }
+        if (options.authHeaders) {
+          return { auth: { headers: options.authHeaders }, source: options.source };
+        }
+        return undefined;
       },
     },
   } as unknown as ExtensionCommandContext;
@@ -122,6 +126,49 @@ describe("usage-bars extension lifecycle", () => {
       data: expect.objectContaining({ provider: "codex", session: 12, weekly: 34 }),
     });
     expect(mock.statuses.at(-1)).toContain("Codex");
+
+    harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
+  });
+
+  it("resolves kimi-coding tokens exposed only via the Authorization header", async () => {
+    let requestHeaders: HeadersInit | undefined;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      requestHeaders = init?.headers;
+      return new Response(JSON.stringify({
+        usage: {
+          limit: "2048",
+          used: "512",
+          remaining: "1536",
+          resetTime: "2026-01-09T15:23:13.716839300Z",
+        },
+        limits: [{
+          window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+          detail: {
+            limit: "200",
+            used: "50",
+            remaining: "150",
+            resetTime: "2026-01-06T13:33:02.717479433Z",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const harness = createHarness();
+    const mock = createContext("tui", "kimi-coding", {
+      configured: true,
+      source: "OAuth",
+      authHeaders: { Authorization: "Bearer kimi-token-from-header" },
+    });
+    harness.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, mock.context);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mock.authCalls()).toBe(1);
+    expect(harness.emitted).toContainEqual({
+      name: "usage:update",
+      data: expect.objectContaining({ provider: "kimi", session: 25, weekly: 25 }),
+    });
+    expect(mock.statuses.at(-1)).toContain("Kimi");
+    expect(requestHeaders).toMatchObject({ Authorization: "Bearer kimi-token-from-header" });
 
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
   });

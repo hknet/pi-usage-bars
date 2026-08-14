@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Resolve kimi-coding OAuth credentials that Pi exposes only as a Bearer `Authorization` header (no `apiKey`), so the Kimi For Coding usage indicator no longer reports "auth resolution failed (configured authentication did not resolve a token)".
+
 ### Documentation
 
 - Recorded Qwen Token Plan and Baseten usage-API research, including the conditions for revisiting provider support.

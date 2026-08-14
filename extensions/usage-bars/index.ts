@@ -506,7 +506,14 @@ export default function (pi: ExtensionAPI): void {
       const resolved = await ctx.modelRegistry.getProviderAuth(providerId);
       if (provider === "claude" && resolved?.source !== "OAuth") return {};
       const token = resolved?.auth.apiKey;
-      return token ? { token } : { error: "configured authentication did not resolve a token" };
+      if (token) return { token };
+      // Some OAuth flows (e.g. kimi-coding) expose the token only as a Bearer
+      // Authorization header rather than as apiKey.
+      const authorization = resolved?.auth.headers?.Authorization ?? resolved?.auth.headers?.authorization;
+      if (typeof authorization === "string" && authorization.startsWith("Bearer ")) {
+        return { token: authorization.slice("Bearer ".length) };
+      }
+      return { error: "configured authentication did not resolve a token" };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
