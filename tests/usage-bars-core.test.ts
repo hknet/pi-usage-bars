@@ -290,6 +290,54 @@ describe("provider fetchers", () => {
     expect(extractFireworksSpendFromPayload({ usageBuckets: [] })).toBeNull();
   });
 
+  it("retries transient Fireworks failures once and respects cancellation", async () => {
+    let accountAttempts = 0;
+    let billingAttempts = 0;
+    const recovered = await fetchFireworksUsage("token", {
+      endpoints,
+      fetchFn: async (url) => {
+        if (url.includes("/accounts?pageSize=")) {
+          accountAttempts += 1;
+          if (accountAttempts === 1) return jsonResponse(503, {}, { "retry-after": "0" });
+          return jsonResponse(200, {
+            accounts: [{ name: "accounts/test-account" }],
+            totalSize: 1,
+          });
+        }
+        billingAttempts += 1;
+        if (billingAttempts === 1) return jsonResponse(429, {}, { "retry-after": "0" });
+        return jsonResponse(200, { lineItems: [] });
+      },
+    });
+    expect(recovered).toMatchObject({ accountSpend: { unit: "USD", monthly: 0 } });
+    expect({ accountAttempts, billingAttempts }).toEqual({ accountAttempts: 2, billingAttempts: 2 });
+
+    let exhaustedAttempts = 0;
+    const exhausted = await fetchFireworksUsage("token", {
+      endpoints,
+      fetchFn: async () => {
+        exhaustedAttempts += 1;
+        return jsonResponse(503, {}, { "retry-after": "0" });
+      },
+    });
+    expect(exhausted.error).toBe("account discovery: HTTP 503");
+    expect(exhaustedAttempts).toBe(2);
+
+    const controller = new AbortController();
+    let cancelledAttempts = 0;
+    const cancelled = await fetchFireworksUsage("token", {
+      endpoints,
+      signal: controller.signal,
+      fetchFn: async () => {
+        cancelledAttempts += 1;
+        controller.abort();
+        return jsonResponse(503, {}, { "retry-after": "60" });
+      },
+    });
+    expect(cancelled.error).toBe("account discovery: request cancelled");
+    expect(cancelledAttempts).toBe(1);
+  });
+
   it("requires and validates a Fireworks account override when multiple accounts are accessible", async () => {
     const accountsPayload = {
       accounts: [{ name: "accounts/team-a" }, { name: "accounts/team-b" }],

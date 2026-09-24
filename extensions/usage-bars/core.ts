@@ -1211,6 +1211,23 @@ function normalizeFireworksAccountId(value: string): string | null {
   return /^[A-Za-z0-9._-]+$/.test(normalized) ? normalized : null;
 }
 
+async function requestFireworksJson(
+  url: string,
+  init: RequestInit,
+  config: RequestConfig,
+): Promise<JsonRequestResult> {
+  const first = await requestJson(url, init, config);
+  if (first.ok || ![429, 502, 503, 504].includes(first.status ?? 0)) return first;
+
+  const retryAfterMs = parseRetryAfterMs(getHeader(first.headers, "retry-after"));
+  try {
+    await sleep(Math.min(retryAfterMs ?? 250, 2_000), config.signal);
+  } catch {
+    return { ok: false, error: "request cancelled", status: null };
+  }
+  return requestJson(url, init, config);
+}
+
 export async function fetchFireworksUsage(
   token: string,
   config: FireworksUsageFetchConfig = {},
@@ -1218,7 +1235,7 @@ export async function fetchFireworksUsage(
   const endpoints = config.endpoints ?? resolveUsageEndpoints(config.env);
   const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
   const apiBase = endpoints.fireworksApi.replace(/\/+$/, "");
-  const accountsResult = await requestJson(`${apiBase}/accounts?pageSize=200`, { headers }, config);
+  const accountsResult = await requestFireworksJson(`${apiBase}/accounts?pageSize=200`, { headers }, config);
   if (!accountsResult.ok) {
     return { session: 0, weekly: 0, error: `account discovery: ${accountsResult.error}` };
   }
@@ -1260,7 +1277,7 @@ export async function fetchFireworksUsage(
 
   const { startTime, endTime } = fireworksMonthRange(config.nowMs ?? Date.now());
   const query = new URLSearchParams({ startTime, endTime });
-  const result = await requestJson(
+  const result = await requestFireworksJson(
     `${apiBase}/accounts/${encodeURIComponent(accountId)}/billing/summary?${query}`,
     { headers },
     config,

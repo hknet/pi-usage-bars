@@ -12,6 +12,10 @@
 
 - Updated the development and test baseline to Pi SDK 0.87.1.
 
+### Fixed
+
+- Retry transient Fireworks `429`, `502`, `503`, and `504` responses once, respecting `Retry-After` and request cancellation.
+
 ## [0.6.0] - 2026-08-29
 
 ### Added
