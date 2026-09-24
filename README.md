@@ -26,10 +26,11 @@ It adds:
 | Moonshot/Kimi API (China) | `moonshotai-cn` | Moonshot China API key |
 | Baseten | `baseten` | Baseten API key |
 | Vercel AI Gateway | `vercel-ai-gateway` | AI Gateway API key |
+| Fireworks AI | `fireworks` | Fireworks API key |
 
 DeepSeek shows total, topped-up, and granted balances in the currency returned by the API. Moonshot shows available, cash, and voucher balances; this is separate from the Kimi For Coding subscription provider. Pi uses `MOONSHOT_API_KEY` for both Moonshot regions, so `/usage` automatically hides the expected authentication failure from the region where a shared environment key is not valid.
 
-OpenRouter shows the account credit balance and current daily, weekly, and monthly key spend. If the API key has a configured credit limit, that limit is also rendered as a usage bar. Baseten shows current calendar-month credits used, aggregated across its documented dedicated, training, and Model APIs billing categories; it does not invent a remaining-balance or quota percentage. Vercel AI Gateway shows the team's remaining AI Gateway Credits balance and lifetime spend.
+OpenRouter shows the account credit balance and current daily, weekly, and monthly key spend. If the API key has a configured credit limit, that limit is also rendered as a usage bar. Baseten shows current calendar-month credits used, aggregated across its documented dedicated, training, and Model APIs billing categories; it does not invent a remaining-balance or quota percentage. Vercel AI Gateway shows the team's remaining AI Gateway Credits balance and lifetime spend. Fireworks shows account-wide rated spend for the current UTC calendar month. Its high default monthly-spend quota is not treated as a useful budget percentage.
 
 MiniMax Subscription Keys can represent an active Token Plan, purchased Credits, or both. The extension shows quota windows when present and a neutral credit-balance line if a first-party key-authenticated response exposes `points_balance`/`credits_balance`. MiniMax currently exposes Credits-only balances through a console endpoint requiring browser-cookie authentication, so a key-only Credits account is shown as “No active Token Plan” with a direction to check the console rather than a fabricated percentage. The extension does not import browser cookies.
 
@@ -110,14 +111,16 @@ First-party monitoring endpoints can be overridden:
 | `PI_MOONSHOT_CN_BALANCE_ENDPOINT` | `https://api.moonshot.cn/v1/users/me/balance` |
 | `PI_BASETEN_USAGE_ENDPOINT` | `https://api.baseten.co/v1/billing/usage_summary` |
 | `PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT` | `https://ai-gateway.vercel.sh/v1/credits` |
+| `PI_FIREWORKS_API_ENDPOINT` | `https://api.fireworks.ai/v1` |
+| `PI_FIREWORKS_ACCOUNT_ID` | Automatically discovered when exactly one account is accessible |
 
-**Security:** the corresponding provider token is sent as a bearer token to the configured endpoint. Only override these variables with an endpoint you trust.
+**Security:** the corresponding provider token is sent as a bearer token to the configured endpoint. Only override endpoint variables with an endpoint you trust. `PI_FIREWORKS_ACCOUNT_ID` selects an account already returned by Fireworks account discovery; it may be either the account slug or its `accounts/<slug>` resource name. When a key can access multiple accounts, this variable is required rather than guessing or aggregating across accounts.
 
 The Codex and Claude usage endpoints are fixed to their first-party services. Claude responses are cached briefly in the system temporary directory to coordinate multiple Pi processes and reduce rate limiting. The cache contains usage values, not credentials.
 
 ## Financial metrics roadmap
 
-Quota percentages and monetary account data have different meaning and color semantics. OpenRouter, DeepSeek, Moonshot, MiniMax, and Vercel AI Gateway financial data are rendered as neutral account values; percentages are used only when an actual limit exists.
+Quota percentages and monetary account data have different meaning and color semantics. OpenRouter, DeepSeek, Moonshot, MiniMax, Vercel AI Gateway, and Fireworks financial data are rendered as neutral account values; percentages are used only when an actual limit exists.
 
 ### Future: Qwen Token Plan
 

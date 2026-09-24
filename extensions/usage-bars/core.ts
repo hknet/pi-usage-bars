@@ -15,7 +15,8 @@ export type ProviderKey =
   | "moonshot"
   | "moonshot-cn"
   | "baseten"
-  | "vercel";
+  | "vercel"
+  | "fireworks";
 export type PiProviderId =
   | "openai-codex"
   | "anthropic"
@@ -29,7 +30,8 @@ export type PiProviderId =
   | "moonshotai"
   | "moonshotai-cn"
   | "baseten"
-  | "vercel-ai-gateway";
+  | "vercel-ai-gateway"
+  | "fireworks";
 
 export interface AccountBalance {
   amount: number;
@@ -88,6 +90,8 @@ export interface UsageEndpoints {
   moonshotCnBalance: string;
   basetenUsage: string;
   vercelCredits: string;
+  fireworksApi: string;
+  fireworksAccountId?: string;
 }
 
 export interface HeadersLike {
@@ -125,6 +129,10 @@ export interface ClaudeUsageFetchConfig extends RequestConfig {
 }
 
 export interface BasetenUsageFetchConfig extends FetchConfig {
+  nowMs?: number;
+}
+
+export interface FireworksUsageFetchConfig extends FetchConfig {
   nowMs?: number;
 }
 
@@ -186,6 +194,7 @@ export const DEFAULT_MOONSHOT_BALANCE_ENDPOINT = "https://api.moonshot.ai/v1/use
 export const DEFAULT_MOONSHOT_CN_BALANCE_ENDPOINT = "https://api.moonshot.cn/v1/users/me/balance";
 export const DEFAULT_BASETEN_USAGE_ENDPOINT = "https://api.baseten.co/v1/billing/usage_summary";
 export const DEFAULT_VERCEL_CREDITS_ENDPOINT = "https://ai-gateway.vercel.sh/v1/credits";
+export const DEFAULT_FIREWORKS_API_ENDPOINT = "https://api.fireworks.ai/v1";
 
 export function resolveUsageEndpoints(env: NodeJS.ProcessEnv = process.env): UsageEndpoints {
   const configured = (value: string | undefined, fallback: string) => {
@@ -208,6 +217,8 @@ export function resolveUsageEndpoints(env: NodeJS.ProcessEnv = process.env): Usa
     moonshotCnBalance: configured(env.PI_MOONSHOT_CN_BALANCE_ENDPOINT, DEFAULT_MOONSHOT_CN_BALANCE_ENDPOINT),
     basetenUsage: configured(env.PI_BASETEN_USAGE_ENDPOINT, DEFAULT_BASETEN_USAGE_ENDPOINT),
     vercelCredits: configured(env.PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT, DEFAULT_VERCEL_CREDITS_ENDPOINT),
+    fireworksApi: configured(env.PI_FIREWORKS_API_ENDPOINT, DEFAULT_FIREWORKS_API_ENDPOINT),
+    fireworksAccountId: env.PI_FIREWORKS_ACCOUNT_ID?.trim() || undefined,
   };
 }
 
@@ -1136,6 +1147,126 @@ export async function fetchBasetenUsage(token: string, config: BasetenUsageFetch
   };
 }
 
+interface FireworksMoney {
+  currencyCode: string;
+  amount: number;
+}
+
+function parseFireworksMoney(value: unknown): FireworksMoney | null {
+  const raw = asObject(value);
+  if (!raw || typeof raw.currencyCode !== "string" || !raw.currencyCode.trim()) return null;
+  const parsedUnits = readNumber(raw.units);
+  const parsedNanos = readNumber(raw.nanos);
+  if ((raw.units !== undefined && parsedUnits === null) || (raw.nanos !== undefined && parsedNanos === null)) {
+    return null;
+  }
+  const units = parsedUnits ?? 0;
+  const nanos = parsedNanos ?? 0;
+  if (!Number.isInteger(nanos) || Math.abs(nanos) >= 1_000_000_000) return null;
+  return {
+    currencyCode: raw.currencyCode.trim().toUpperCase(),
+    amount: units + nanos / 1_000_000_000,
+  };
+}
+
+export function extractFireworksSpendFromPayload(payload: unknown): UsageData | null {
+  const root = asObject(payload);
+  if (!root || !Array.isArray(root.lineItems)) return null;
+  const amounts: FireworksMoney[] = [];
+  for (const value of root.lineItems) {
+    const item = asObject(value);
+    const parsed = parseFireworksMoney(item?.totalCost);
+    if (!parsed) return null;
+    amounts.push(parsed);
+  }
+  const currencies = new Set(amounts.map((amount) => amount.currencyCode));
+  if (currencies.size > 1) return null;
+  const unit = amounts[0]?.currencyCode ?? "USD";
+  const monthly = amounts.reduce((sum, amount) => sum + amount.amount, 0);
+  return {
+    session: 0,
+    weekly: 0,
+    quotaHidden: true,
+    accountSpend: { unit, monthly: Number(monthly.toFixed(6)) },
+  };
+}
+
+function fireworksMonthRange(nowMs: number): { startTime: string; endTime: string } {
+  const now = new Date(nowMs);
+  return {
+    startTime: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(),
+    // Fireworks treats the end date as exclusive and aggregates by UTC date.
+    endTime: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString(),
+  };
+}
+
+function normalizeFireworksAccountId(value: string): string | null {
+  const normalized = value.trim().replace(/^accounts\//, "");
+  return /^[A-Za-z0-9._-]+$/.test(normalized) ? normalized : null;
+}
+
+export async function fetchFireworksUsage(
+  token: string,
+  config: FireworksUsageFetchConfig = {},
+): Promise<UsageData> {
+  const endpoints = config.endpoints ?? resolveUsageEndpoints(config.env);
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+  const apiBase = endpoints.fireworksApi.replace(/\/+$/, "");
+  const accountsResult = await requestJson(`${apiBase}/accounts?pageSize=200`, { headers }, config);
+  if (!accountsResult.ok) {
+    return { session: 0, weekly: 0, error: `account discovery: ${accountsResult.error}` };
+  }
+
+  const root = asObject(accountsResult.data);
+  const accounts = Array.isArray(root?.accounts) ? root.accounts.map(asObject).filter(Boolean) : [];
+  const accountIds = accounts.flatMap((account) => {
+    const name = typeof account?.name === "string" ? account.name : "";
+    const id = normalizeFireworksAccountId(name);
+    return id ? [id] : [];
+  });
+  const totalSize = readNumber(root?.totalSize);
+  const configuredId = endpoints.fireworksAccountId
+    ? normalizeFireworksAccountId(endpoints.fireworksAccountId)
+    : null;
+  if (endpoints.fireworksAccountId && !configuredId) {
+    return { session: 0, weekly: 0, error: "invalid PI_FIREWORKS_ACCOUNT_ID" };
+  }
+
+  let accountId: string | undefined;
+  if (configuredId) {
+    if (!accountIds.includes(configuredId)) {
+      return { session: 0, weekly: 0, error: "PI_FIREWORKS_ACCOUNT_ID is not accessible with this key" };
+    }
+    accountId = configuredId;
+  } else if (accountIds.length === 1 && (totalSize === null || totalSize <= 1)) {
+    // Fireworks may return totalSize: 0 alongside one account, so trust the
+    // usable resource list unless totalSize explicitly reports more accounts.
+    accountId = accountIds[0];
+  } else if (accountIds.length === 0) {
+    return { session: 0, weekly: 0, error: "no accessible Fireworks account" };
+  } else {
+    return {
+      session: 0,
+      weekly: 0,
+      error: "multiple Fireworks accounts; set PI_FIREWORKS_ACCOUNT_ID",
+    };
+  }
+
+  const { startTime, endTime } = fireworksMonthRange(config.nowMs ?? Date.now());
+  const query = new URLSearchParams({ startTime, endTime });
+  const result = await requestJson(
+    `${apiBase}/accounts/${encodeURIComponent(accountId)}/billing/summary?${query}`,
+    { headers },
+    config,
+  );
+  if (!result.ok) return { session: 0, weekly: 0, error: `billing summary: ${result.error}` };
+  return extractFireworksSpendFromPayload(result.data) ?? {
+    session: 0,
+    weekly: 0,
+    error: "unrecognized billing summary response shape",
+  };
+}
+
 export function extractVercelCreditsFromPayload(payload: unknown): UsageData | null {
   const root = asObject(payload);
   if (!root) return null;
@@ -1283,6 +1414,7 @@ export function detectProvider(
     case "moonshotai-cn": return "moonshot-cn";
     case "baseten": return "baseten";
     case "vercel-ai-gateway": return "vercel";
+    case "fireworks": return "fireworks";
     default: return null;
   }
 }
@@ -1302,6 +1434,7 @@ export function providerToPiProviderId(provider: ProviderKey): PiProviderId {
     case "moonshot-cn": return "moonshotai-cn";
     case "baseten": return "baseten";
     case "vercel": return "vercel-ai-gateway";
+    case "fireworks": return "fireworks";
   }
 }
 
@@ -1335,6 +1468,7 @@ export async function fetchAllUsages(
     "moonshot-cn": null,
     baseten: null,
     vercel: null,
+    fireworks: null,
   };
   const tasks: Promise<void>[] = [];
 
@@ -1369,6 +1503,9 @@ export async function fetchAllUsages(
   }
   if (tokens.baseten) assign("baseten", fetchBasetenUsage(tokens.baseten, { ...config, endpoints }));
   if (tokens.vercel) assign("vercel", fetchVercelCredits(tokens.vercel, { ...config, endpoints }));
+  if (tokens.fireworks) {
+    assign("fireworks", fetchFireworksUsage(tokens.fireworks, { ...config, endpoints, nowMs: config.nowMs }));
+  }
 
   await Promise.all(tasks);
 

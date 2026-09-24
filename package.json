@@ -16,7 +16,8 @@
     "deepseek",
     "moonshot",
     "baseten",
-    "vercel"
+    "vercel",
+    "fireworks"
   ],
   "license": "MIT",
   "repository": {

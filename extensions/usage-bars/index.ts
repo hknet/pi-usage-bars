@@ -24,6 +24,7 @@ import {
   fetchClaudeUsageWithFallback,
   fetchCodexUsage,
   fetchDeepSeekBalance,
+  fetchFireworksUsage,
   fetchKimiUsage,
   fetchMiniMaxUsage,
   fetchMoonshotBalance,
@@ -58,6 +59,7 @@ const PROVIDERS: readonly ProviderKey[] = [
   "moonshot-cn",
   "baseten",
   "vercel",
+  "fireworks",
 ];
 
 const PROVIDER_LABELS: Record<ProviderKey, string> = {
@@ -74,6 +76,7 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   "moonshot-cn": "Moonshot/Kimi API (China)",
   baseten: "Baseten",
   vercel: "Vercel AI Gateway",
+  fireworks: "Fireworks",
 };
 
 function formatFinancialAmount(amount: number, unit: string): string {
@@ -473,6 +476,7 @@ export default function (pi: ExtensionAPI): void {
     "moonshot-cn": null,
     baseten: null,
     vercel: null,
+    fireworks: null,
     activeProvider: null,
     available: {},
   };
@@ -650,6 +654,7 @@ export default function (pi: ExtensionAPI): void {
     }
     if (provider === "baseten") state.baseten = await fetchBasetenUsage(credential.token, { endpoints, signal });
     if (provider === "vercel") state.vercel = await fetchVercelCredits(credential.token, { endpoints, signal });
+    if (provider === "fireworks") state.fireworks = await fetchFireworksUsage(credential.token, { endpoints, signal });
   }
 
   async function runPoll(): Promise<void> {

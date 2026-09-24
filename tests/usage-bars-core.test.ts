@@ -8,6 +8,7 @@ import {
   detectProvider,
   extractBasetenUsageFromPayload,
   extractDeepSeekBalanceFromPayload,
+  extractFireworksSpendFromPayload,
   extractKimiUsageFromPayload,
   extractMiniMaxUsageFromPayload,
   extractMoonshotBalanceFromPayload,
@@ -21,6 +22,7 @@ import {
   fetchCodexUsage,
   fetchBasetenUsage,
   fetchDeepSeekBalance,
+  fetchFireworksUsage,
   fetchKimiUsage,
   fetchMiniMaxUsage,
   fetchMoonshotBalance,
@@ -82,6 +84,8 @@ const endpoints: UsageEndpoints = {
   moonshotCnBalance: "https://api.moonshot-cn.test/v1/users/me/balance",
   basetenUsage: "https://api.baseten.test/v1/billing/usage_summary",
   vercelCredits: "https://ai-gateway.vercel.test/v1/credits",
+  fireworksApi: "https://api.fireworks.test/v1",
+  fireworksAccountId: undefined,
 };
 
 describe("formatting and parsing", () => {
@@ -149,6 +153,7 @@ describe("current Pi provider compatibility", () => {
     expect(detectProvider({ provider: "moonshotai-cn" })).toBe("moonshot-cn");
     expect(detectProvider({ provider: "baseten" })).toBe("baseten");
     expect(detectProvider({ provider: "vercel-ai-gateway" })).toBe("vercel");
+    expect(detectProvider({ provider: "fireworks" })).toBe("fireworks");
     expect(detectProvider({ provider: "google-gemini-cli" })).toBeNull();
     expect(detectProvider({ provider: "google-antigravity" })).toBeNull();
   });
@@ -166,6 +171,7 @@ describe("current Pi provider compatibility", () => {
     expect(providerToPiProviderId("moonshot-cn")).toBe("moonshotai-cn");
     expect(providerToPiProviderId("baseten")).toBe("baseten");
     expect(providerToPiProviderId("vercel")).toBe("vercel-ai-gateway");
+    expect(providerToPiProviderId("fireworks")).toBe("fireworks");
   });
 
   it("resolves global and China endpoint overrides", () => {
@@ -184,6 +190,8 @@ describe("current Pi provider compatibility", () => {
       PI_MOONSHOT_CN_BALANCE_ENDPOINT: "https://moonshot-cn.example/balance",
       PI_BASETEN_USAGE_ENDPOINT: "https://baseten.example/usage",
       PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT: "https://vercel.example/credits",
+      PI_FIREWORKS_API_ENDPOINT: "https://fireworks.example/v1",
+      PI_FIREWORKS_ACCOUNT_ID: "my-account",
     } as NodeJS.ProcessEnv)).toEqual({
       zai: "https://global.example/usage",
       zaiCn: "https://cn.example/usage",
@@ -199,6 +207,8 @@ describe("current Pi provider compatibility", () => {
       moonshotCnBalance: "https://moonshot-cn.example/balance",
       basetenUsage: "https://baseten.example/usage",
       vercelCredits: "https://vercel.example/credits",
+      fireworksApi: "https://fireworks.example/v1",
+      fireworksAccountId: "my-account",
     });
   });
 });
@@ -229,6 +239,69 @@ describe("provider fetchers", () => {
     expect(extractBasetenUsageFromPayload({ model_apis_usage: { subtotal: 4 } })).toBeNull();
     expect((await fetchBasetenUsage("token", { endpoints, fetchFn: async () => jsonResponse(403, {}) })).error)
       .toBe("HTTP 403");
+  });
+
+  it("discovers one Fireworks account and fetches current-month rated spend", async () => {
+    const urls: string[] = [];
+    const usage = await fetchFireworksUsage("fireworks-key", {
+      endpoints,
+      nowMs: Date.parse("2026-09-24T12:00:00.000Z"),
+      fetchFn: async (url, init) => {
+        urls.push(url);
+        expect(init?.headers).toMatchObject({ Authorization: "Bearer fireworks-key" });
+        if (url.includes("/accounts?pageSize=")) {
+          return jsonResponse(200, {
+            accounts: [{ name: "accounts/test-account" }],
+            // Fireworks has been observed returning 0 with one usable account.
+            totalSize: 0,
+          });
+        }
+        return jsonResponse(200, { lineItems: [
+          { totalCost: { currencyCode: "USD", units: "1", nanos: 500_000_000 } },
+          { totalCost: { currencyCode: "USD", units: "2", nanos: 250_000_000 } },
+        ], usageBuckets: [] });
+      },
+    });
+    expect(usage).toMatchObject({
+      quotaHidden: true,
+      accountSpend: { unit: "USD", monthly: 3.75 },
+    });
+    expect(urls).toEqual([
+      "https://api.fireworks.test/v1/accounts?pageSize=200",
+      "https://api.fireworks.test/v1/accounts/test-account/billing/summary?startTime=2026-09-01T00%3A00%3A00.000Z&endTime=2026-09-25T00%3A00%3A00.000Z",
+    ]);
+    expect(extractFireworksSpendFromPayload({ lineItems: [] })).toMatchObject({
+      accountSpend: { unit: "USD", monthly: 0 },
+    });
+    expect(extractFireworksSpendFromPayload({ lineItems: [
+      { totalCost: { currencyCode: "USD", units: "1", nanos: 0 } },
+      { totalCost: { currencyCode: "EUR", units: "1", nanos: 0 } },
+    ] })).toBeNull();
+    expect(extractFireworksSpendFromPayload({
+      lineItems: [{ totalCost: { currencyCode: "USD", units: "not-a-number" } }],
+    })).toBeNull();
+    expect(extractFireworksSpendFromPayload({ usageBuckets: [] })).toBeNull();
+  });
+
+  it("requires and validates a Fireworks account override when multiple accounts are accessible", async () => {
+    const accountsPayload = {
+      accounts: [{ name: "accounts/team-a" }, { name: "accounts/team-b" }],
+      totalSize: 2,
+    };
+    const fetchFn: FetchLike = async (url) => url.includes("/accounts?pageSize=")
+      ? jsonResponse(200, accountsPayload)
+      : jsonResponse(200, { lineItems: [] });
+
+    expect((await fetchFireworksUsage("token", { endpoints, fetchFn })).error)
+      .toBe("multiple Fireworks accounts; set PI_FIREWORKS_ACCOUNT_ID");
+    expect((await fetchFireworksUsage("token", {
+      endpoints: { ...endpoints, fireworksAccountId: "missing" },
+      fetchFn,
+    })).error).toBe("PI_FIREWORKS_ACCOUNT_ID is not accessible with this key");
+    expect(await fetchFireworksUsage("token", {
+      endpoints: { ...endpoints, fireworksAccountId: "accounts/team-b" },
+      fetchFn,
+    })).toMatchObject({ accountSpend: { unit: "USD", monthly: 0 } });
   });
 
   it("fetches Vercel AI Gateway balance and lifetime spend through its Pi-resolved key", async () => {

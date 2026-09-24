@@ -38,9 +38,13 @@ Pi's `vercel-ai-gateway` provider resolves `AI_GATEWAY_API_KEY`. Vercel document
 
 ## Fireworks
 
-**Status:** Candidate — documented API is suitable, but multi-account behavior needs validation.
+**Status:** Supported as of 2026-09-24.
 
-Fireworks documents bearer-key-authenticated account discovery through `GET https://api.fireworks.ai/v1/accounts` and rated costs through `GET /v1/accounts/{account_id}/billing/summary`. This can support current-period spend using Pi's resolved `FIREWORKS_API_KEY`, but implementation should first validate ordinary inference-key permissions and define how multiple accessible accounts are selected or aggregated.
+Fireworks documents bearer-key-authenticated account discovery through `GET https://api.fireworks.ai/v1/accounts` and account-wide rated costs through `GET /v1/accounts/{account_id}/billing/summary`. Fireworks states that any key on the target account can use the API. A live redacted test with an ordinary user API key resolved through Pi's `fireworks` provider returned HTTP 200 for account discovery, billing summary, quotas, and the self-scoped usage-cost query. It exposed one accessible account; no credential, account identifier, or raw response was retained.
+
+The extension reports rated spend for the current UTC calendar month from the billing summary. It does not use the `monthly-spend-usd` quota as a budget percentage because validation observed a `9,999,999` default that appears to mean effectively unlimited rather than an actionable budget. Exactly one accessible account is selected automatically. When a key can access multiple accounts, `PI_FIREWORKS_ACCOUNT_ID` must match one of the discovered account IDs; the extension does not guess or aggregate accounts.
+
+**Recheck when:** Fireworks documents an account credit balance or a reliable distinction between explicit spend budgets and effectively unlimited quota values.
 
 ## Meta Muse
 

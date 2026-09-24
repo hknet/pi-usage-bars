@@ -539,6 +539,48 @@ describe("usage-bars extension lifecycle", () => {
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
   });
 
+  it("polls Fireworks through Pi auth and renders current-month spend", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      urls.push(String(input));
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer resolved-by-pi");
+      if (String(input).includes("/accounts?pageSize=")) {
+        return new Response(JSON.stringify({
+          accounts: [{ name: "accounts/test-account" }],
+          totalSize: 1,
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        lineItems: [{ totalCost: { currencyCode: "USD", units: "4", nanos: 500_000_000 } }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const harness = createHarness();
+    const mock = createContext("tui", "fireworks", {
+      configured: true,
+      source: "Environment variable",
+      token: "resolved-by-pi",
+    });
+    harness.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, mock.context);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mock.authCalls()).toBe(1);
+    expect(urls[0]).toBe("https://api.fireworks.ai/v1/accounts?pageSize=200");
+    expect(urls[1]).toContain("/accounts/test-account/billing/summary?");
+    expect(harness.emitted).toContainEqual({
+      name: "@hk_net/pi-usage-bars:update",
+      data: expect.objectContaining({
+        provider: "fireworks",
+        quotaHidden: true,
+        accountSpend: { unit: "USD", monthly: 4.5 },
+      }),
+    });
+    expect(mock.statuses.at(-1)).toContain("Fireworks");
+    expect(mock.statuses.at(-1)).toContain("Month · $4.50");
+
+    harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
+  });
+
   it("guards the custom command outside interactive TUI mode", async () => {
     const harness = createHarness();
     const mock = createContext("rpc");

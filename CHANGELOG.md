@@ -5,6 +5,7 @@
 ### Added
 
 - Added Vercel AI Gateway balance and lifetime-spend reporting through its documented key-authenticated Credits API.
+- Added Fireworks AI current-month account spend reporting through its documented key-authenticated billing API, with explicit account selection when a key can access multiple accounts.
 
 ### Changed
 
