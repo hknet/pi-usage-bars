@@ -27,10 +27,11 @@ It adds:
 | Baseten | `baseten` | Baseten API key |
 | Vercel AI Gateway | `vercel-ai-gateway` | AI Gateway API key |
 | Fireworks AI | `fireworks` | Fireworks API key |
+| xAI | `xai` | Separate read-only xAI Management Key |
 
 DeepSeek shows total, topped-up, and granted balances in the currency returned by the API. Moonshot shows available, cash, and voucher balances; this is separate from the Kimi For Coding subscription provider. Pi uses `MOONSHOT_API_KEY` for both Moonshot regions, so `/usage` automatically hides the expected authentication failure from the region where a shared environment key is not valid.
 
-OpenRouter shows the account credit balance and current daily, weekly, and monthly key spend. If the API key has a configured credit limit, that limit is also rendered as a usage bar. Baseten shows current calendar-month credits used, aggregated across its documented dedicated, training, and Model APIs billing categories; it does not invent a remaining-balance or quota percentage. Vercel AI Gateway shows the team's remaining AI Gateway Credits balance and lifetime spend. Fireworks shows account-wide rated spend for the current UTC calendar month. Its high default monthly-spend quota is not treated as a useful budget percentage.
+OpenRouter shows the account credit balance and current daily, weekly, and monthly key spend. If the API key has a configured credit limit, that limit is also rendered as a usage bar. Baseten shows current calendar-month credits used, aggregated across its documented dedicated, training, and Model APIs billing categories; it does not invent a remaining-balance or quota percentage. Vercel AI Gateway shows the team's remaining AI Gateway Credits balance and lifetime spend. Fireworks shows account-wide rated spend for the current UTC calendar month. Its high default monthly-spend quota is not treated as a useful budget percentage. xAI shows the team's prepaid balance and current billing-cycle spend.
 
 MiniMax Subscription Keys can represent an active Token Plan, purchased Credits, or both. The extension shows quota windows when present and a neutral credit-balance line if a first-party key-authenticated response exposes `points_balance`/`credits_balance`. MiniMax currently exposes Credits-only balances through a console endpoint requiring browser-cookie authentication, so a key-only Credits account is shown as “No active Token Plan” with a direction to check the console rather than a fabricated percentage. The extension does not import browser cookies.
 
@@ -42,6 +43,14 @@ Google Gemini CLI and Google Antigravity are not supported because Pi removed th
 - Node.js 22.19 or newer when using the npm-distributed Pi CLI
 
 Authenticate providers through Pi's `/login` command. The extension resolves credentials through Pi's provider API; it does not read or write `auth.json` itself.
+
+xAI keeps inference and billing credentials separate. After authenticating Pi's normal `xai` provider, configure usage reporting with a read-only, team-scoped Management Key:
+
+```text
+/login pi-usage-bars-xai-management
+```
+
+Select **xAI Management (pi-usage-bars)** and paste the key into Pi's secret prompt. For headless or CI use, `XAI_MANAGEMENT_KEY` is also accepted from the environment. Organization-scoped Management Keys are not selected or aggregated automatically.
 
 ## Install
 
@@ -89,7 +98,9 @@ Pass `--usage` to print one JSON line for the active model provider and exit wit
 pi --no-extensions -e C:\hk\code\pi-usage-bars\extensions\usage-bars\index.ts --usage
 ```
 
-The result has `status` set to `ok`, `unconfigured`, `unsupported`, or `error`. No credential is included in the output.(https://raw.githubusercontent.com/hknet/pi-usage-bars/main/assets/usage-command.png)
+The result has `status` set to `ok`, `unconfigured`, `unsupported`, or `error`. No credential is included in the output.
+
+![/usage command](https://raw.githubusercontent.com/hknet/pi-usage-bars/main/assets/usage-command.png)
 
 ## Endpoint configuration
 
@@ -113,6 +124,7 @@ First-party monitoring endpoints can be overridden:
 | `PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT` | `https://ai-gateway.vercel.sh/v1/credits` |
 | `PI_FIREWORKS_API_ENDPOINT` | `https://api.fireworks.ai/v1` |
 | `PI_FIREWORKS_ACCOUNT_ID` | Automatically discovered when exactly one account is accessible |
+| `PI_XAI_MANAGEMENT_API_ENDPOINT` | `https://management-api.x.ai` |
 
 **Security:** the corresponding provider token is sent as a bearer token to the configured endpoint. Only override endpoint variables with an endpoint you trust. `PI_FIREWORKS_ACCOUNT_ID` selects an account already returned by Fireworks account discovery; it may be either the account slug or its `accounts/<slug>` resource name. When a key can access multiple accounts, this variable is required rather than guessing or aggregating across accounts.
 
@@ -120,7 +132,7 @@ The Codex and Claude usage endpoints are fixed to their first-party services. Cl
 
 ## Financial metrics roadmap
 
-Quota percentages and monetary account data have different meaning and color semantics. OpenRouter, DeepSeek, Moonshot, MiniMax, Vercel AI Gateway, and Fireworks financial data are rendered as neutral account values; percentages are used only when an actual limit exists.
+Quota percentages and monetary account data have different meaning and color semantics. OpenRouter, DeepSeek, Moonshot, MiniMax, Vercel AI Gateway, Fireworks, and xAI financial data are rendered as neutral account values; percentages are used only when an actual limit exists.
 
 ### Future: Qwen Token Plan
 

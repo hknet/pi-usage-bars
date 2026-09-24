@@ -15,6 +15,7 @@ import {
   extractOpenRouterUsageFromPayloads,
   extractUsageFromPayload,
   extractVercelCreditsFromPayload,
+  extractXaiBillingFromPayloads,
   extractZaiUsageFromPayload,
   fetchAllUsages,
   fetchClaudeUsage,
@@ -28,6 +29,7 @@ import {
   fetchMoonshotBalance,
   fetchOpenRouterUsage,
   fetchVercelCredits,
+  fetchXaiUsage,
   fetchZaiUsage,
   formatDuration,
   formatResetsAt,
@@ -86,6 +88,7 @@ const endpoints: UsageEndpoints = {
   vercelCredits: "https://ai-gateway.vercel.test/v1/credits",
   fireworksApi: "https://api.fireworks.test/v1",
   fireworksAccountId: undefined,
+  xaiManagementApi: "https://management-api.xai.test",
 };
 
 describe("formatting and parsing", () => {
@@ -154,6 +157,7 @@ describe("current Pi provider compatibility", () => {
     expect(detectProvider({ provider: "baseten" })).toBe("baseten");
     expect(detectProvider({ provider: "vercel-ai-gateway" })).toBe("vercel");
     expect(detectProvider({ provider: "fireworks" })).toBe("fireworks");
+    expect(detectProvider({ provider: "xai" })).toBe("xai");
     expect(detectProvider({ provider: "google-gemini-cli" })).toBeNull();
     expect(detectProvider({ provider: "google-antigravity" })).toBeNull();
   });
@@ -172,6 +176,7 @@ describe("current Pi provider compatibility", () => {
     expect(providerToPiProviderId("baseten")).toBe("baseten");
     expect(providerToPiProviderId("vercel")).toBe("vercel-ai-gateway");
     expect(providerToPiProviderId("fireworks")).toBe("fireworks");
+    expect(providerToPiProviderId("xai")).toBe("pi-usage-bars-xai-management");
   });
 
   it("resolves global and China endpoint overrides", () => {
@@ -192,6 +197,7 @@ describe("current Pi provider compatibility", () => {
       PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT: "https://vercel.example/credits",
       PI_FIREWORKS_API_ENDPOINT: "https://fireworks.example/v1",
       PI_FIREWORKS_ACCOUNT_ID: "my-account",
+      PI_XAI_MANAGEMENT_API_ENDPOINT: "https://management.xai.example",
     } as NodeJS.ProcessEnv)).toEqual({
       zai: "https://global.example/usage",
       zaiCn: "https://cn.example/usage",
@@ -209,6 +215,7 @@ describe("current Pi provider compatibility", () => {
       vercelCredits: "https://vercel.example/credits",
       fireworksApi: "https://fireworks.example/v1",
       fireworksAccountId: "my-account",
+      xaiManagementApi: "https://management.xai.example",
     });
   });
 });
@@ -302,6 +309,63 @@ describe("provider fetchers", () => {
       endpoints: { ...endpoints, fireworksAccountId: "accounts/team-b" },
       fetchFn,
     })).toMatchObject({ accountSpend: { unit: "USD", monthly: 0 } });
+  });
+
+  it("validates a team-scoped xAI Management Key and fetches billing values", async () => {
+    const urls: string[] = [];
+    const fetchFn: FetchLike = async (url, init) => {
+      urls.push(url);
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer management-key" });
+      if (url.endsWith("/auth/management-keys/validation")) {
+        return jsonResponse(200, { scope: "SCOPE_TEAM", scopeId: "team-id" });
+      }
+      if (url.endsWith("/prepaid/balance")) {
+        return jsonResponse(200, { total: { val: "-1457" }, changes: [] });
+      }
+      return jsonResponse(200, { coreInvoice: { totalWithCorr: { val: "32" } } });
+    };
+    const usage = await fetchXaiUsage("management-key", { endpoints, fetchFn });
+    expect(usage).toMatchObject({
+      quotaHidden: true,
+      accountBalance: { amount: 14.57, unit: "USD", label: "Prepaid balance" },
+      accountSpend: { unit: "USD", monthly: 0.32 },
+    });
+    expect(urls).toEqual([
+      "https://management-api.xai.test/auth/management-keys/validation",
+      "https://management-api.xai.test/v1/billing/teams/team-id/prepaid/balance",
+      "https://management-api.xai.test/v1/billing/teams/team-id/postpaid/invoice/preview",
+    ]);
+    expect(extractXaiBillingFromPayloads(
+      { total: { val: "-100" } },
+      { coreInvoice: { totalWithCorr: { val: "25" } } },
+    )).toMatchObject({
+      accountBalance: { amount: 1 },
+      accountSpend: { monthly: 0.25 },
+    });
+  });
+
+  it("rejects organization-scoped xAI keys and tolerates one unavailable billing endpoint", async () => {
+    const organizationKey = await fetchXaiUsage("token", {
+      endpoints,
+      fetchFn: async () => jsonResponse(200, { scope: "SCOPE_ORGANIZATION", scopeId: "org-id" }),
+    });
+    expect(organizationKey.error).toBe("xAI Management Key must be team-scoped");
+
+    const partial = await fetchXaiUsage("token", {
+      endpoints,
+      fetchFn: async (url) => {
+        if (url.endsWith("/validation")) {
+          return jsonResponse(200, { scope: "SCOPE_TEAM", scopeId: "team-id" });
+        }
+        if (url.endsWith("/prepaid/balance")) return jsonResponse(403, {});
+        return jsonResponse(200, { coreInvoice: { totalWithCorr: { val: "75" } } });
+      },
+    });
+    expect(partial).toMatchObject({
+      accountSpend: { unit: "USD", monthly: 0.75 },
+      warning: "prepaid balance unavailable (HTTP 403)",
+    });
+    expect(extractXaiBillingFromPayloads({}, {})).toBeNull();
   });
 
   it("fetches Vercel AI Gateway balance and lifetime spend through its Pi-resolved key", async () => {

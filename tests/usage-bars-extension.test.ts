@@ -4,12 +4,15 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import usageBarsExtension from "../extensions/usage-bars/index";
+import usageBarsExtension, {
+  XAI_MANAGEMENT_PROVIDER_ID,
+} from "../extensions/usage-bars/index";
 
 interface Harness {
   handlers: Map<string, (event: unknown, ctx: ExtensionContext) => unknown>;
   commands: Map<string, { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }>;
   emitted: Array<{ name: string; data: unknown }>;
+  providers: unknown[];
 }
 
 function createHarness(options: { usageFlag?: boolean } = {}): Harness {
@@ -17,6 +20,7 @@ function createHarness(options: { usageFlag?: boolean } = {}): Harness {
     handlers: new Map(),
     commands: new Map(),
     emitted: [],
+    providers: [],
   };
   const pi = {
     on(name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) {
@@ -26,6 +30,9 @@ function createHarness(options: { usageFlag?: boolean } = {}): Harness {
       harness.commands.set(name, command);
     },
     registerFlag() {},
+    registerProvider(provider: unknown) {
+      harness.providers.push(provider);
+    },
     getFlag(name: string) {
       return name === "usage" && options.usageFlag === true;
     },
@@ -100,6 +107,41 @@ afterEach(() => {
 });
 
 describe("usage-bars extension lifecycle", () => {
+  it("registers model-less xAI Management authentication with Pi", async () => {
+    const harness = createHarness();
+    const provider = harness.providers[0] as {
+      id: string;
+      name: string;
+      getModels(): readonly unknown[];
+      auth: {
+        apiKey: {
+          login(interaction: unknown): Promise<unknown>;
+          resolve(input: unknown): Promise<unknown>;
+        };
+      };
+    };
+    expect(provider.id).toBe(XAI_MANAGEMENT_PROVIDER_ID);
+    expect(provider.name).toBe("xAI Management (pi-usage-bars)");
+    expect(provider.getModels()).toHaveLength(0);
+
+    const signal = new AbortController().signal;
+    const credential = await provider.auth.apiKey.login({
+      signal,
+      prompt: async () => "stored-management-key",
+      notify() {},
+    });
+    expect(credential).toEqual({ type: "api_key", key: "stored-management-key" });
+    expect(await provider.auth.apiKey.resolve({
+      ctx: { env: async () => undefined },
+      credential,
+      signal,
+    })).toMatchObject({ auth: { apiKey: "stored-management-key" } });
+    expect(await provider.auth.apiKey.resolve({
+      ctx: { env: async (name: string) => name === "XAI_MANAGEMENT_KEY" ? "environment-management-key" : undefined },
+      signal,
+    })).toMatchObject({ auth: { apiKey: "environment-management-key" } });
+  });
+
   it("prints one-line JSON and shuts down for --usage", async () => {
     const harness = createHarness({ usageFlag: true });
     const mock = createContext("print", "google");
@@ -577,6 +619,57 @@ describe("usage-bars extension lifecycle", () => {
     });
     expect(mock.statuses.at(-1)).toContain("Fireworks");
     expect(mock.statuses.at(-1)).toContain("Month · $4.50");
+
+    harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
+  });
+
+  it("polls xAI billing through its separate Pi-managed credential", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      urls.push(url);
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer resolved-management-key");
+      if (url.endsWith("/auth/management-keys/validation")) {
+        return new Response(JSON.stringify({ scope: "SCOPE_TEAM", scopeId: "team-id" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.endsWith("/prepaid/balance")) {
+        return new Response(JSON.stringify({ total: { val: "-1457" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ coreInvoice: { totalWithCorr: { val: "32" } } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const harness = createHarness();
+    const mock = createContext("tui", "xai", {
+      configured: true,
+      source: "stored credential",
+      token: "resolved-management-key",
+    });
+    harness.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, mock.context);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mock.authCalls()).toBe(1);
+    expect(urls).toHaveLength(3);
+    expect(harness.emitted).toContainEqual({
+      name: "@hk_net/pi-usage-bars:update",
+      data: expect.objectContaining({
+        provider: "xai",
+        quotaHidden: true,
+        accountBalance: { amount: 14.57, unit: "USD", label: "Prepaid balance" },
+        accountSpend: { unit: "USD", monthly: 0.32 },
+      }),
+    });
+    expect(mock.statuses.at(-1)).toContain("xAI");
+    expect(mock.statuses.at(-1)).toContain("Prepaid balance · $14.57");
+    expect(mock.statuses.at(-1)).toContain("Month · $0.32");
 
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
   });

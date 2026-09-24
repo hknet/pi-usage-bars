@@ -7,6 +7,7 @@ import {
   type KeybindingsManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
+import { createProvider, envApiKeyAuth } from "@earendil-works/pi-ai";
 import {
   Container,
   Input,
@@ -30,6 +31,7 @@ import {
   fetchMoonshotBalance,
   fetchOpenRouterUsage,
   fetchVercelCredits,
+  fetchXaiUsage,
   fetchZaiUsage,
   providerToPiProviderId,
   resolveUsageEndpoints,
@@ -39,12 +41,16 @@ import {
   type UsageByProvider,
   type UsageData,
   type UsageTokens,
+  XAI_MANAGEMENT_PROVIDER_ID,
 } from "./core";
+
+export { XAI_MANAGEMENT_PROVIDER_ID } from "./core";
 
 const POLL_INTERVAL_MS = 2 * 60 * 1000;
 const EXTENSION_ID = "@hk_net/pi-usage-bars";
 const STATUS_KEY = EXTENSION_ID;
 const USAGE_UPDATE_EVENT = `${EXTENSION_ID}:update`;
+const XAI_MANAGEMENT_PROVIDER_NAME = "xAI Management (pi-usage-bars)";
 const PROVIDERS: readonly ProviderKey[] = [
   "codex",
   "claude",
@@ -60,6 +66,7 @@ const PROVIDERS: readonly ProviderKey[] = [
   "baseten",
   "vercel",
   "fireworks",
+  "xai",
 ];
 
 const PROVIDER_LABELS: Record<ProviderKey, string> = {
@@ -77,6 +84,7 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   baseten: "Baseten",
   vercel: "Vercel AI Gateway",
   fireworks: "Fireworks",
+  xai: "xAI",
 };
 
 function formatFinancialAmount(amount: number, unit: string): string {
@@ -455,6 +463,22 @@ interface UsageState extends UsageByProvider {
 }
 
 export default function (pi: ExtensionAPI): void {
+  // xAI exposes billing only through a separate Management Key. Register a
+  // model-less provider so Pi owns secret prompting, storage, and resolution;
+  // the key can never be selected for or sent to inference.
+  pi.registerProvider(createProvider({
+    id: XAI_MANAGEMENT_PROVIDER_ID,
+    name: XAI_MANAGEMENT_PROVIDER_NAME,
+    auth: {
+      apiKey: envApiKeyAuth("xAI read-only Management Key", ["XAI_MANAGEMENT_KEY"]),
+    },
+    models: [],
+    api: {
+      stream() { throw new Error("Credential-only provider does not support inference"); },
+      streamSimple() { throw new Error("Credential-only provider does not support inference"); },
+    },
+  }));
+
   pi.registerFlag("usage", {
     description: "Print one-line usage for the active provider and exit",
     type: "boolean",
@@ -477,6 +501,7 @@ export default function (pi: ExtensionAPI): void {
     baseten: null,
     vercel: null,
     fireworks: null,
+    xai: null,
     activeProvider: null,
     available: {},
   };
@@ -655,6 +680,7 @@ export default function (pi: ExtensionAPI): void {
     if (provider === "baseten") state.baseten = await fetchBasetenUsage(credential.token, { endpoints, signal });
     if (provider === "vercel") state.vercel = await fetchVercelCredits(credential.token, { endpoints, signal });
     if (provider === "fireworks") state.fireworks = await fetchFireworksUsage(credential.token, { endpoints, signal });
+    if (provider === "xai") state.xai = await fetchXaiUsage(credential.token, { endpoints, signal });
   }
 
   async function runPoll(): Promise<void> {

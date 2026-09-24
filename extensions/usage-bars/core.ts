@@ -16,7 +16,8 @@ export type ProviderKey =
   | "moonshot-cn"
   | "baseten"
   | "vercel"
-  | "fireworks";
+  | "fireworks"
+  | "xai";
 export type PiProviderId =
   | "openai-codex"
   | "anthropic"
@@ -31,7 +32,8 @@ export type PiProviderId =
   | "moonshotai-cn"
   | "baseten"
   | "vercel-ai-gateway"
-  | "fireworks";
+  | "fireworks"
+  | "pi-usage-bars-xai-management";
 
 export interface AccountBalance {
   amount: number;
@@ -92,6 +94,7 @@ export interface UsageEndpoints {
   vercelCredits: string;
   fireworksApi: string;
   fireworksAccountId?: string;
+  xaiManagementApi: string;
 }
 
 export interface HeadersLike {
@@ -195,6 +198,8 @@ export const DEFAULT_MOONSHOT_CN_BALANCE_ENDPOINT = "https://api.moonshot.cn/v1/
 export const DEFAULT_BASETEN_USAGE_ENDPOINT = "https://api.baseten.co/v1/billing/usage_summary";
 export const DEFAULT_VERCEL_CREDITS_ENDPOINT = "https://ai-gateway.vercel.sh/v1/credits";
 export const DEFAULT_FIREWORKS_API_ENDPOINT = "https://api.fireworks.ai/v1";
+export const DEFAULT_XAI_MANAGEMENT_API_ENDPOINT = "https://management-api.x.ai";
+export const XAI_MANAGEMENT_PROVIDER_ID = "pi-usage-bars-xai-management";
 
 export function resolveUsageEndpoints(env: NodeJS.ProcessEnv = process.env): UsageEndpoints {
   const configured = (value: string | undefined, fallback: string) => {
@@ -219,6 +224,7 @@ export function resolveUsageEndpoints(env: NodeJS.ProcessEnv = process.env): Usa
     vercelCredits: configured(env.PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT, DEFAULT_VERCEL_CREDITS_ENDPOINT),
     fireworksApi: configured(env.PI_FIREWORKS_API_ENDPOINT, DEFAULT_FIREWORKS_API_ENDPOINT),
     fireworksAccountId: env.PI_FIREWORKS_ACCOUNT_ID?.trim() || undefined,
+    xaiManagementApi: configured(env.PI_XAI_MANAGEMENT_API_ENDPOINT, DEFAULT_XAI_MANAGEMENT_API_ENDPOINT),
   };
 }
 
@@ -1267,6 +1273,85 @@ export async function fetchFireworksUsage(
   };
 }
 
+function readXaiUsdCents(value: unknown): number | null {
+  const raw = asObject(value);
+  const cents = readNumber(raw?.val ?? value);
+  return cents === null ? null : Number((cents / 100).toFixed(6));
+}
+
+export function extractXaiBillingFromPayloads(
+  prepaidPayload: unknown,
+  invoicePreviewPayload: unknown,
+): UsageData | null {
+  const prepaid = asObject(prepaidPayload);
+  const preview = asObject(invoicePreviewPayload);
+  const accountingBalance = readXaiUsdCents(prepaid?.total);
+  const currentCycleTotal = readXaiUsdCents(asObject(preview?.coreInvoice)?.totalWithCorr);
+  if (accountingBalance === null && currentCycleTotal === null) return null;
+
+  return {
+    session: 0,
+    weekly: 0,
+    quotaHidden: true,
+    // xAI represents purchases as negative and spend as positive in its
+    // prepaid accounting ledger, so the available balance is the negated total.
+    accountBalance: accountingBalance === null
+      ? undefined
+      : { amount: -accountingBalance, unit: "USD", label: "Prepaid balance" },
+    accountSpend: currentCycleTotal === null
+      ? undefined
+      : { unit: "USD", monthly: currentCycleTotal },
+  };
+}
+
+export async function fetchXaiUsage(token: string, config: FetchConfig = {}): Promise<UsageData> {
+  const endpoints = config.endpoints ?? resolveUsageEndpoints(config.env);
+  const apiBase = endpoints.xaiManagementApi.replace(/\/+$/, "");
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+  const validation = await requestJson(`${apiBase}/auth/management-keys/validation`, { headers }, config);
+  if (!validation.ok) return { session: 0, weekly: 0, error: `key validation: ${validation.error}` };
+
+  const validationBody = asObject(validation.data);
+  const scope = typeof validationBody?.scope === "string" ? validationBody.scope : "";
+  if (scope !== "SCOPE_TEAM") {
+    return {
+      session: 0,
+      weekly: 0,
+      error: "xAI Management Key must be team-scoped",
+    };
+  }
+  const teamId = typeof validationBody?.scopeId === "string" && validationBody.scopeId.trim()
+    ? validationBody.scopeId.trim()
+    : typeof validationBody?.teamId === "string" ? validationBody.teamId.trim() : "";
+  if (!teamId) return { session: 0, weekly: 0, error: "key validation did not return a team ID" };
+
+  const team = encodeURIComponent(teamId);
+  const [prepaid, preview] = await Promise.all([
+    requestJson(`${apiBase}/v1/billing/teams/${team}/prepaid/balance`, { headers }, config),
+    requestJson(`${apiBase}/v1/billing/teams/${team}/postpaid/invoice/preview`, { headers }, config),
+  ]);
+  const usage = extractXaiBillingFromPayloads(
+    prepaid.ok ? prepaid.data : undefined,
+    preview.ok ? preview.data : undefined,
+  );
+  if (!usage) {
+    const errors = [
+      prepaid.ok ? undefined : `prepaid balance: ${prepaid.error}`,
+      preview.ok ? undefined : `invoice preview: ${preview.error}`,
+    ].filter((error): error is string => Boolean(error));
+    return {
+      session: 0,
+      weekly: 0,
+      error: errors.length > 0 ? errors.join("; ") : "unrecognized xAI billing response shape",
+    };
+  }
+  const partialErrors = [
+    prepaid.ok ? undefined : `prepaid balance unavailable (${prepaid.error})`,
+    preview.ok ? undefined : `invoice preview unavailable (${preview.error})`,
+  ].filter((error): error is string => Boolean(error));
+  return { ...usage, warning: partialErrors.length > 0 ? partialErrors.join("; ") : undefined };
+}
+
 export function extractVercelCreditsFromPayload(payload: unknown): UsageData | null {
   const root = asObject(payload);
   if (!root) return null;
@@ -1415,6 +1500,7 @@ export function detectProvider(
     case "baseten": return "baseten";
     case "vercel-ai-gateway": return "vercel";
     case "fireworks": return "fireworks";
+    case "xai": return "xai";
     default: return null;
   }
 }
@@ -1435,6 +1521,7 @@ export function providerToPiProviderId(provider: ProviderKey): PiProviderId {
     case "baseten": return "baseten";
     case "vercel": return "vercel-ai-gateway";
     case "fireworks": return "fireworks";
+    case "xai": return XAI_MANAGEMENT_PROVIDER_ID;
   }
 }
 
@@ -1469,6 +1556,7 @@ export async function fetchAllUsages(
     baseten: null,
     vercel: null,
     fireworks: null,
+    xai: null,
   };
   const tasks: Promise<void>[] = [];
 
@@ -1506,6 +1594,7 @@ export async function fetchAllUsages(
   if (tokens.fireworks) {
     assign("fireworks", fetchFireworksUsage(tokens.fireworks, { ...config, endpoints, nowMs: config.nowMs }));
   }
+  if (tokens.xai) assign("xai", fetchXaiUsage(tokens.xai, { ...config, endpoints }));
 
   await Promise.all(tasks);
 

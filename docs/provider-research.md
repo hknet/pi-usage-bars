@@ -46,6 +46,16 @@ The extension reports rated spend for the current UTC calendar month from the bi
 
 **Recheck when:** Fireworks documents an account credit balance or a reliable distinction between explicit spend budgets and effectively unlimited quota values.
 
+## xAI
+
+**Status:** Supported as of 2026-09-24.
+
+xAI documents its billing APIs at `https://management-api.x.ai`, authenticated with a Management Key that is deliberately separate from the normal inference API key or subscription OAuth credential used by Pi's `xai` provider. The extension registers the model-less `pi-usage-bars-xai-management` provider so `/login` can prompt for and store a read-only Management Key through Pi's credential system. `XAI_MANAGEMENT_KEY` remains an optional environment fallback.
+
+A live redacted test with a read-only, team-scoped key returned HTTP 200 for key validation, prepaid balance, current invoice preview, and postpaid spending limits. The extension validates `SCOPE_TEAM`, obtains the team ID internally, and reports the prepaid accounting total as a positive available balance plus `coreInvoice.totalWithCorr` as current billing-cycle spend. It never logs the key, team ID, ACL contents, or raw response. Organization-scoped keys are rejected rather than guessing or aggregating teams.
+
+**Recheck when:** xAI adds team discovery for organization-scoped Management Keys or exposes billing through the ordinary inference credential.
+
 ## Meta Muse
 
 **Status:** Blocked — no documented account-usage API found as of 2026-09-24.
