@@ -1,6 +1,6 @@
 {
   "name": "@hk_net/pi-usage-bars",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Quota, balance, and spend indicators for current Pi providers",
   "keywords": [
     "pi-package",

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.7.0] - 2026-09-24
+
 ### Added
 
 - Added Vercel AI Gateway balance and lifetime-spend reporting through its documented key-authenticated Credits API.
