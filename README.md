@@ -88,7 +88,7 @@ Usage refresh runs in interactive TUI sessions every two minutes. It does not ru
 
 Run `/usage` to open a searchable list of configured supported providers. The selected provider's details are expanded; use the configured selection and page-navigation keybindings to browse the bounded list.
 
-![/usage command]
+![/usage command](https://raw.githubusercontent.com/hknet/pi-usage-bars/main/assets/usage-command.png)
 
 ### `--usage`
 
@@ -99,8 +99,6 @@ pi --no-extensions -e C:\hk\code\pi-usage-bars\extensions\usage-bars\index.ts --
 ```
 
 The result has `status` set to `ok`, `unconfigured`, `unsupported`, or `error`. No credential is included in the output.
-
-![/usage command](https://raw.githubusercontent.com/hknet/pi-usage-bars/main/assets/usage-command.png)
 
 ## Endpoint configuration
 
