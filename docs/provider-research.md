@@ -28,6 +28,26 @@ Pi's `baseten` provider resolves `BASETEN_API_KEY`. Baseten documents `GET https
 
 **Recheck when:** Baseten publishes a first-party balance, budget, or quota API that permits a more complete account indicator.
 
+## Vercel AI Gateway
+
+**Status:** Supported as of 2026-09-24.
+
+Pi's `vercel-ai-gateway` provider resolves `AI_GATEWAY_API_KEY`. Vercel documents `GET https://ai-gateway.vercel.sh/v1/credits`, authenticated with the same API key as a bearer token. The response reports the team's remaining AI Gateway Credits balance and total lifetime spend in USD.
+
+**Recheck when:** Vercel adds defined-period spend or budget fields that provide more actionable detail than lifetime spend.
+
+## Fireworks
+
+**Status:** Candidate — documented API is suitable, but multi-account behavior needs validation.
+
+Fireworks documents bearer-key-authenticated account discovery through `GET https://api.fireworks.ai/v1/accounts` and rated costs through `GET /v1/accounts/{account_id}/billing/summary`. This can support current-period spend using Pi's resolved `FIREWORKS_API_KEY`, but implementation should first validate ordinary inference-key permissions and define how multiple accessible accounts are selected or aggregated.
+
+## Meta Muse
+
+**Status:** Blocked — no documented account-usage API found as of 2026-09-24.
+
+Pi 0.86.1 added the `meta` provider with Meta Muse subscription OAuth and `META_API_KEY` authentication. No documented first-party endpoint was found for remaining subscription quota, reset timing, account balance, or spend. Do not infer quota from local requests or use undocumented console endpoints.
+
 ## Acceptance criteria for a new provider
 
 A provider is suitable when a documented first-party API or response header supplies at least one meaningful account-level value:

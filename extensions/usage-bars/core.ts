@@ -14,7 +14,8 @@ export type ProviderKey =
   | "deepseek"
   | "moonshot"
   | "moonshot-cn"
-  | "baseten";
+  | "baseten"
+  | "vercel";
 export type PiProviderId =
   | "openai-codex"
   | "anthropic"
@@ -27,7 +28,8 @@ export type PiProviderId =
   | "deepseek"
   | "moonshotai"
   | "moonshotai-cn"
-  | "baseten";
+  | "baseten"
+  | "vercel-ai-gateway";
 
 export interface AccountBalance {
   amount: number;
@@ -85,6 +87,7 @@ export interface UsageEndpoints {
   moonshotBalance: string;
   moonshotCnBalance: string;
   basetenUsage: string;
+  vercelCredits: string;
 }
 
 export interface HeadersLike {
@@ -182,6 +185,7 @@ export const DEFAULT_DEEPSEEK_BALANCE_ENDPOINT = "https://api.deepseek.com/user/
 export const DEFAULT_MOONSHOT_BALANCE_ENDPOINT = "https://api.moonshot.ai/v1/users/me/balance";
 export const DEFAULT_MOONSHOT_CN_BALANCE_ENDPOINT = "https://api.moonshot.cn/v1/users/me/balance";
 export const DEFAULT_BASETEN_USAGE_ENDPOINT = "https://api.baseten.co/v1/billing/usage_summary";
+export const DEFAULT_VERCEL_CREDITS_ENDPOINT = "https://ai-gateway.vercel.sh/v1/credits";
 
 export function resolveUsageEndpoints(env: NodeJS.ProcessEnv = process.env): UsageEndpoints {
   const configured = (value: string | undefined, fallback: string) => {
@@ -203,6 +207,7 @@ export function resolveUsageEndpoints(env: NodeJS.ProcessEnv = process.env): Usa
     moonshotBalance: configured(env.PI_MOONSHOT_BALANCE_ENDPOINT, DEFAULT_MOONSHOT_BALANCE_ENDPOINT),
     moonshotCnBalance: configured(env.PI_MOONSHOT_CN_BALANCE_ENDPOINT, DEFAULT_MOONSHOT_CN_BALANCE_ENDPOINT),
     basetenUsage: configured(env.PI_BASETEN_USAGE_ENDPOINT, DEFAULT_BASETEN_USAGE_ENDPOINT),
+    vercelCredits: configured(env.PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT, DEFAULT_VERCEL_CREDITS_ENDPOINT),
   };
 }
 
@@ -1131,6 +1136,42 @@ export async function fetchBasetenUsage(token: string, config: BasetenUsageFetch
   };
 }
 
+export function extractVercelCreditsFromPayload(payload: unknown): UsageData | null {
+  const root = asObject(payload);
+  if (!root) return null;
+  const balance = readNumber(root.balance);
+  const totalUsed = readNumber(root.total_used ?? root.totalUsed);
+  if (balance === null && totalUsed === null) return null;
+
+  return {
+    session: 0,
+    weekly: 0,
+    quotaHidden: true,
+    accountBalance: balance === null
+      ? undefined
+      : { amount: balance, unit: "USD", label: "Balance" },
+    accountSpend: totalUsed === null
+      ? undefined
+      : { unit: "USD", lifetime: totalUsed },
+    warning: balance !== null && balance <= 0
+      ? "Balance exhausted; inference requests may be rejected"
+      : undefined,
+  };
+}
+
+export async function fetchVercelCredits(token: string, config: FetchConfig = {}): Promise<UsageData> {
+  const endpoints = config.endpoints ?? resolveUsageEndpoints(config.env);
+  const result = await requestJson(endpoints.vercelCredits, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+  }, config);
+  if (!result.ok) return { session: 0, weekly: 0, error: result.error };
+  return extractVercelCreditsFromPayload(result.data) ?? {
+    session: 0,
+    weekly: 0,
+    error: "unrecognized response shape",
+  };
+}
+
 export function extractMoonshotBalanceFromPayload(
   payload: unknown,
   provider: "moonshot" | "moonshot-cn" = "moonshot",
@@ -1241,6 +1282,7 @@ export function detectProvider(
     case "moonshotai": return "moonshot";
     case "moonshotai-cn": return "moonshot-cn";
     case "baseten": return "baseten";
+    case "vercel-ai-gateway": return "vercel";
     default: return null;
   }
 }
@@ -1259,6 +1301,7 @@ export function providerToPiProviderId(provider: ProviderKey): PiProviderId {
     case "moonshot": return "moonshotai";
     case "moonshot-cn": return "moonshotai-cn";
     case "baseten": return "baseten";
+    case "vercel": return "vercel-ai-gateway";
   }
 }
 
@@ -1291,6 +1334,7 @@ export async function fetchAllUsages(
     moonshot: null,
     "moonshot-cn": null,
     baseten: null,
+    vercel: null,
   };
   const tasks: Promise<void>[] = [];
 
@@ -1324,6 +1368,7 @@ export async function fetchAllUsages(
     assign("moonshot-cn", fetchMoonshotBalance(tokens["moonshot-cn"], "moonshot-cn", { ...config, endpoints }));
   }
   if (tokens.baseten) assign("baseten", fetchBasetenUsage(tokens.baseten, { ...config, endpoints }));
+  if (tokens.vercel) assign("vercel", fetchVercelCredits(tokens.vercel, { ...config, endpoints }));
 
   await Promise.all(tasks);
 

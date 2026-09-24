@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Added Vercel AI Gateway balance and lifetime-spend reporting through its documented key-authenticated Credits API.
+
+### Changed
+
+- Updated the development and test baseline to Pi SDK 0.87.1.
+
 ## [0.6.0] - 2026-08-29
 
 ### Added

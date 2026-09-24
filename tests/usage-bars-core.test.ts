@@ -13,6 +13,7 @@ import {
   extractMoonshotBalanceFromPayload,
   extractOpenRouterUsageFromPayloads,
   extractUsageFromPayload,
+  extractVercelCreditsFromPayload,
   extractZaiUsageFromPayload,
   fetchAllUsages,
   fetchClaudeUsage,
@@ -24,6 +25,7 @@ import {
   fetchMiniMaxUsage,
   fetchMoonshotBalance,
   fetchOpenRouterUsage,
+  fetchVercelCredits,
   fetchZaiUsage,
   formatDuration,
   formatResetsAt,
@@ -79,6 +81,7 @@ const endpoints: UsageEndpoints = {
   moonshotBalance: "https://api.moonshot.test/v1/users/me/balance",
   moonshotCnBalance: "https://api.moonshot-cn.test/v1/users/me/balance",
   basetenUsage: "https://api.baseten.test/v1/billing/usage_summary",
+  vercelCredits: "https://ai-gateway.vercel.test/v1/credits",
 };
 
 describe("formatting and parsing", () => {
@@ -145,6 +148,7 @@ describe("current Pi provider compatibility", () => {
     expect(detectProvider({ provider: "moonshotai" })).toBe("moonshot");
     expect(detectProvider({ provider: "moonshotai-cn" })).toBe("moonshot-cn");
     expect(detectProvider({ provider: "baseten" })).toBe("baseten");
+    expect(detectProvider({ provider: "vercel-ai-gateway" })).toBe("vercel");
     expect(detectProvider({ provider: "google-gemini-cli" })).toBeNull();
     expect(detectProvider({ provider: "google-antigravity" })).toBeNull();
   });
@@ -161,6 +165,7 @@ describe("current Pi provider compatibility", () => {
     expect(providerToPiProviderId("moonshot")).toBe("moonshotai");
     expect(providerToPiProviderId("moonshot-cn")).toBe("moonshotai-cn");
     expect(providerToPiProviderId("baseten")).toBe("baseten");
+    expect(providerToPiProviderId("vercel")).toBe("vercel-ai-gateway");
   });
 
   it("resolves global and China endpoint overrides", () => {
@@ -178,6 +183,7 @@ describe("current Pi provider compatibility", () => {
       PI_MOONSHOT_BALANCE_ENDPOINT: "https://moonshot.example/balance",
       PI_MOONSHOT_CN_BALANCE_ENDPOINT: "https://moonshot-cn.example/balance",
       PI_BASETEN_USAGE_ENDPOINT: "https://baseten.example/usage",
+      PI_VERCEL_AI_GATEWAY_CREDITS_ENDPOINT: "https://vercel.example/credits",
     } as NodeJS.ProcessEnv)).toEqual({
       zai: "https://global.example/usage",
       zaiCn: "https://cn.example/usage",
@@ -192,6 +198,7 @@ describe("current Pi provider compatibility", () => {
       moonshotBalance: "https://moonshot.example/balance",
       moonshotCnBalance: "https://moonshot-cn.example/balance",
       basetenUsage: "https://baseten.example/usage",
+      vercelCredits: "https://vercel.example/credits",
     });
   });
 });
@@ -222,6 +229,33 @@ describe("provider fetchers", () => {
     expect(extractBasetenUsageFromPayload({ model_apis_usage: { subtotal: 4 } })).toBeNull();
     expect((await fetchBasetenUsage("token", { endpoints, fetchFn: async () => jsonResponse(403, {}) })).error)
       .toBe("HTTP 403");
+  });
+
+  it("fetches Vercel AI Gateway balance and lifetime spend through its Pi-resolved key", async () => {
+    let request: { url: string; authorization: string | null } | undefined;
+    const usage = await fetchVercelCredits("vercel-key", {
+      endpoints,
+      fetchFn: async (url, init) => {
+        request = { url, authorization: new Headers(init?.headers).get("authorization") };
+        return jsonResponse(200, { balance: "95.50", total_used: "4.50" });
+      },
+    });
+    expect(usage).toMatchObject({
+      quotaHidden: true,
+      accountBalance: { amount: 95.5, unit: "USD", label: "Balance" },
+      accountSpend: { unit: "USD", lifetime: 4.5 },
+    });
+    expect(request).toEqual({
+      url: endpoints.vercelCredits,
+      authorization: "Bearer vercel-key",
+    });
+    expect(extractVercelCreditsFromPayload({ total_used: "1.25" })).toMatchObject({
+      quotaHidden: true,
+      accountSpend: { unit: "USD", lifetime: 1.25 },
+    });
+    expect(extractVercelCreditsFromPayload({ balance: "not-a-number" })).toBeNull();
+    expect((await fetchVercelCredits("token", { endpoints, fetchFn: async () => jsonResponse(401, {}) })).error)
+      .toBe("HTTP 401");
   });
 
   it("fetches Codex usage and handles HTTP/JSON failures", async () => {

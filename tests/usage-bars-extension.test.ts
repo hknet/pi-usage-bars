@@ -504,6 +504,41 @@ describe("usage-bars extension lifecycle", () => {
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
   });
 
+  it("polls Vercel AI Gateway through Pi auth and renders balance", async () => {
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      expect(String(input)).toBe("https://ai-gateway.vercel.sh/v1/credits");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer resolved-by-pi");
+      return new Response(JSON.stringify({ balance: "18.75", total_used: "6.25" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const harness = createHarness();
+    const mock = createContext("tui", "vercel-ai-gateway", {
+      configured: true,
+      source: "Environment variable",
+      token: "resolved-by-pi",
+    });
+    harness.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, mock.context);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mock.authCalls()).toBe(1);
+    expect(harness.emitted).toContainEqual({
+      name: "@hk_net/pi-usage-bars:update",
+      data: expect.objectContaining({
+        provider: "vercel",
+        quotaHidden: true,
+        accountBalance: { amount: 18.75, unit: "USD", label: "Balance" },
+        accountSpend: { unit: "USD", lifetime: 6.25 },
+      }),
+    });
+    expect(mock.statuses.at(-1)).toContain("Vercel AI Gateway");
+    expect(mock.statuses.at(-1)).toContain("$18.75");
+
+    harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
+  });
+
   it("guards the custom command outside interactive TUI mode", async () => {
     const harness = createHarness();
     const mock = createContext("rpc");
