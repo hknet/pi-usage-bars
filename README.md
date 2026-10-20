@@ -81,7 +81,7 @@ pi update npm:@hk_net/pi-usage-bars
 
 When the active model belongs to a configured supported provider, the footer shows its available quota windows with reset countdowns when provided by the service.
 
-![Claude footer bar](https://raw.githubusercontent.com/hknet/pi-usage-bars/main/assets/claude.png)
+<img width="50%" alt="pi-usage-bars screenshot" src="https://github.com/user-attachments/assets/45bff327-bf23-4510-9d9e-290eb04878d3" />
 
 Usage refresh runs in interactive TUI sessions every two minutes. It does not run in print, JSON, or RPC mode.
 
@@ -89,7 +89,8 @@ Usage refresh runs in interactive TUI sessions every two minutes. It does not ru
 
 Run `/usage` to open a searchable list of configured supported providers. The selected provider's details are expanded; use the configured selection and page-navigation keybindings to browse the bounded list.
 
-![/usage command](https://raw.githubusercontent.com/hknet/pi-usage-bars/main/assets/usage-command.png)
+<img width="50%" alt="/usage command" src="https://github.com/user-attachments/assets/50058db1-5de5-4bc7-af37-d4b211112dfd" />
+
 
 ### `--usage`
 
