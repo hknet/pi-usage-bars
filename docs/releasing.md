@@ -38,7 +38,7 @@ Preparation:
 2. rejects an existing npm version or Git tag;
 3. updates `package.json` and `package-lock.json` without creating an early tag;
 4. promotes the `Unreleased` changelog entries into a dated release while preserving an empty `Unreleased` heading;
-5. installs dependencies with `npm ci --no-audit`, provisions a temporary pinned Bun binary, and runs typecheck, tests, detailed dependency audits, and package dry-run; and
+5. installs dependencies with `npm ci --no-audit`, provisions a temporary pinned Bun binary, and runs typecheck, tests, detailed dependency audits, tarball verification, and package dry-run; and
 6. commits and pushes the release source.
 
 After reviewing the prepared commit, stage it for browser approval:

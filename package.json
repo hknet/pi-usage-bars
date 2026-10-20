@@ -45,6 +45,7 @@
     "test": "bun test tests",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test",
+    "verify:tarball": "node scripts/verify-tarball.mjs",
     "prepublishOnly": "npm run check"
   },
   "engines": {

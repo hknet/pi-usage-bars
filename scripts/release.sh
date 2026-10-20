@@ -18,7 +18,7 @@ fi
 
 set -euo pipefail
 
-BUN_VERSION="1.3.0"
+BUN_VERSION="1.3.14"
 NPM_REGISTRY="https://registry.npmjs.org"
 YES=false
 PHASE="prepare"
@@ -159,6 +159,7 @@ run_checks() {
   printf '\n=== Production dependency audit (blocks high/critical findings) ===\n'
   npm audit --omit=dev --audit-level=high
   echo "Production dependency audit passed."
+  npm run verify:tarball
   npm pack --dry-run
 }
 
