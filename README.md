@@ -2,7 +2,8 @@
 
 Quota, balance, and spend indicators for [Pi](https://github.com/earendil-works/pi).
 
-![Codex footer bar](https://raw.githubusercontent.com/hknet/pi-usage-bars/main/assets/codex.png)
+<img width="50%" alt="pi-usage-bars screenshot" src="https://github.com/user-attachments/assets/45bff327-bf23-4510-9d9e-290eb04878d3" />
+
 
 It adds:
 
