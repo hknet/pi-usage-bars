@@ -49,7 +49,13 @@ function createHarness(options: { usageFlag?: boolean } = {}): Harness {
 function createContext(
   mode: "tui" | "rpc" | "json" | "print",
   provider = "openai",
-  options: { configured?: boolean; source?: string; token?: string; authHeaders?: Record<string, string> } = {},
+  options: {
+    configured?: boolean;
+    source?: string;
+    token?: string;
+    authHeaders?: Record<string, string>;
+    baseUrl?: string;
+  } = {},
 ) {
   const statuses: Array<string | undefined> = [];
   const statusKeys: string[] = [];
@@ -64,7 +70,7 @@ function createContext(
   const context = {
     mode,
     hasUI: mode === "tui" || mode === "rpc",
-    model: { provider, id: "test-model" },
+    model: { provider, id: "test-model", ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}) },
     ui: {
       theme,
       setStatus: (key: string, value: string | undefined) => {
@@ -208,6 +214,35 @@ describe("usage-bars extension lifecycle", () => {
     });
     expect(mock.statuses.at(-1)).toContain("Codex");
     expect(mock.statusKeys.at(-1)).toBe("@hk_net/pi-usage-bars");
+
+    harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
+  });
+
+  it("shows no footer quota for a supported provider routed through a proxy", async () => {
+    const requested: string[] = [];
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      requested.push(String(url));
+      return new Response(JSON.stringify({
+        rate_limit: {
+          primary_window: { used_percent: 12 },
+          secondary_window: { used_percent: 34 },
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const harness = createHarness();
+    const mock = createContext("tui", "openai-codex", {
+      configured: true,
+      source: "OAuth",
+      token: "resolved-by-pi",
+      baseUrl: "http://localhost:4000/backend-api",
+    });
+    harness.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, mock.context);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mock.statuses.some((status) => status?.includes("Codex"))).toBe(false);
+    expect(harness.emitted.some((event) => (event.data as { provider?: string })?.provider === "codex")).toBe(false);
+    expect(requested.some((url) => url.includes("chatgpt.com"))).toBe(false);
 
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
   });

@@ -1498,11 +1498,56 @@ export async function fetchZaiUsage(
   return extractUsageFromPayload(result.data) ?? { session: 0, weekly: 0, error: "unrecognized response shape" };
 }
 
+// Inference hosts Pi 1.3 uses for each supported provider. A model whose
+// baseUrl points elsewhere (a proxy, LiteLLM, or another gateway) does not spend
+// that provider's quota, so the footer shows no bar instead of a wrong one.
+const PROVIDER_HOSTS: Record<ProviderKey, readonly string[]> = {
+  codex: ["chatgpt.com"],
+  claude: ["api.anthropic.com"],
+  zai: ["api.z.ai"],
+  "zai-cn": ["open.bigmodel.cn"],
+  kimi: ["api.kimi.com"],
+  minimax: ["api.minimax.io"],
+  "minimax-cn": ["api.minimaxi.com"],
+  openrouter: ["openrouter.ai"],
+  deepseek: ["api.deepseek.com"],
+  moonshot: ["api.moonshot.ai"],
+  "moonshot-cn": ["api.moonshot.cn"],
+  baseten: ["inference.baseten.co"],
+  vercel: ["ai-gateway.vercel.sh"],
+  fireworks: ["api.fireworks.ai"],
+  xai: ["api.x.ai"],
+};
+
+// Providers that also serve documented regional subdomains, such as
+// us.openrouter.ai.
+const PROVIDER_HOST_SUFFIXES: Partial<Record<ProviderKey, string>> = {
+  openrouter: ".openrouter.ai",
+};
+
+export function isProviderRoute(provider: ProviderKey, baseUrl: string | undefined): boolean {
+  if (typeof baseUrl !== "string" || !baseUrl.trim()) return true;
+  let host: string;
+  try {
+    host = new URL(baseUrl.trim()).hostname.replace(/\.$/, "");
+  } catch {
+    return true;
+  }
+  if (PROVIDER_HOSTS[provider].includes(host)) return true;
+  const suffix = PROVIDER_HOST_SUFFIXES[provider];
+  return suffix !== undefined && host.endsWith(suffix);
+}
+
 export function detectProvider(
-  model: { provider?: string } | string | undefined | null,
+  model: { provider?: string; baseUrl?: string } | string | undefined | null,
 ): ProviderKey | null {
   if (!model || typeof model === "string") return null;
-  switch ((model.provider || "").toLowerCase()) {
+  const provider = providerFromId(model.provider);
+  return provider && isProviderRoute(provider, model.baseUrl) ? provider : null;
+}
+
+function providerFromId(providerId: string | undefined): ProviderKey | null {
+  switch ((providerId || "").toLowerCase()) {
     case "openai-codex": return "codex";
     case "anthropic": return "claude";
     case "zai": return "zai";

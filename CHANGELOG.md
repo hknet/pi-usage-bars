@@ -5,6 +5,7 @@
 ### Changed
 
 - Quota percentages above zero but below 1% now render as `<1%` instead of `0%`.
+- The footer no longer shows a provider's quota when the active model's `baseUrl` points at another host, such as a proxy, LiteLLM, or another gateway, because those requests do not spend that quota. OpenRouter regional hosts (`*.openrouter.ai`) still count as OpenRouter; models without a `baseUrl` keep provider-ID detection.
 
 ### Development
 

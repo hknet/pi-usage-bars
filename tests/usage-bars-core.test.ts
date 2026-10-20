@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import {
   clampPercent,
   colorForPercent,
@@ -34,6 +35,7 @@ import {
   formatDuration,
   formatPercent,
   formatResetsAt,
+  isProviderRoute,
   parseRetryAfterMs,
   providerToPiProviderId,
   readLimitPercent,
@@ -169,6 +171,62 @@ describe("current Pi provider compatibility", () => {
     expect(detectProvider({ provider: "google-antigravity" })).toBeNull();
     expect(detectProvider({ provider: "typesafe" })).toBeNull();
     expect(detectProvider({ provider: "xiaomi-token-plan-cn" })).toBeNull();
+  });
+
+  it("detects every built-in Pi model of a supported provider on its default route", () => {
+    const supported = [
+      "openai-codex",
+      "anthropic",
+      "zai",
+      "zai-coding-cn",
+      "kimi-coding",
+      "minimax",
+      "minimax-cn",
+      "openrouter",
+      "deepseek",
+      "moonshotai",
+      "moonshotai-cn",
+      "baseten",
+      "vercel-ai-gateway",
+      "fireworks",
+      "xai",
+    ] as const;
+    const builtin = getBuiltinProviders() as readonly string[];
+    for (const providerId of supported) {
+      expect(builtin).toContain(providerId);
+      const expected = detectProvider({ provider: providerId });
+      expect(expected).not.toBeNull();
+      const models = getBuiltinModels(providerId);
+      expect(models.length).toBeGreaterThan(0);
+      for (const model of models) {
+        expect(`${model.id} ${model.baseUrl} → ${detectProvider(model)}`)
+          .toBe(`${model.id} ${model.baseUrl} → ${expected}`);
+      }
+    }
+  });
+
+  it("ignores supported provider IDs routed through another host", () => {
+    expect(detectProvider({ provider: "anthropic", baseUrl: "https://api.anthropic.com" })).toBe("claude");
+    expect(detectProvider({ provider: "anthropic", baseUrl: "https://API.Anthropic.com./v1" })).toBe("claude");
+    expect(detectProvider({ provider: "anthropic", baseUrl: "http://localhost:4000" })).toBeNull();
+    expect(detectProvider({ provider: "anthropic", baseUrl: "https://litellm.example.com/anthropic" })).toBeNull();
+    expect(detectProvider({ provider: "openai-codex", baseUrl: "https://proxy.example.com/backend-api" })).toBeNull();
+    expect(detectProvider({ provider: "zai", baseUrl: "https://api.z.ai.example.com/api/coding/paas/v4" })).toBeNull();
+    expect(detectProvider({ provider: "openrouter", baseUrl: "https://ai-gateway.vercel.sh" })).toBeNull();
+  });
+
+  it("accepts documented OpenRouter regional endpoints only for OpenRouter", () => {
+    expect(detectProvider({ provider: "openrouter", baseUrl: "https://us.openrouter.ai/api/v1" })).toBe("openrouter");
+    expect(detectProvider({ provider: "openrouter", baseUrl: "https://evilopenrouter.ai/api/v1" })).toBeNull();
+    expect(detectProvider({ provider: "anthropic", baseUrl: "https://us.openrouter.ai/api/v1" })).toBeNull();
+  });
+
+  it("keeps provider-ID detection when the route is unknown", () => {
+    expect(isProviderRoute("claude", undefined)).toBe(true);
+    expect(isProviderRoute("claude", "")).toBe(true);
+    expect(isProviderRoute("claude", "   ")).toBe(true);
+    expect(isProviderRoute("claude", "not a url")).toBe(true);
+    expect(detectProvider({ provider: "anthropic", baseUrl: "" })).toBe("claude");
   });
 
   it("maps usage keys to Pi provider IDs", () => {
