@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Updated the development and test baseline to Pi SDK 1.3.0; verified the extension loader and Kimi OAuth/xAI Management credential resolution with the Pi 1.3.0 CLI.
+
+### Documentation
+
+- Audited Pi 1.3.0 provider additions and documented why TypeSafe, Xiaomi Token Plan, and GitHub Copilot metrics do not currently meet the account-usage support criteria.
+
 ## [0.7.0] - 2026-09-24
 
 ### Added

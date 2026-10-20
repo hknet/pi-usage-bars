@@ -62,6 +62,34 @@ A live redacted test with a read-only, team-scoped key returned HTTP 200 for key
 
 Pi 0.86.1 added the `meta` provider with Meta Muse subscription OAuth and `META_API_KEY` authentication. No documented first-party endpoint was found for remaining subscription quota, reset timing, account balance, or spend. Do not infer quota from local requests or use undocumented console endpoints.
 
+## Pi 1.3.0 provider audit (2026-10-20)
+
+Comparing the registered `builtinProviders()` lists in [`pi-ai` 0.87.1](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/providers/all.ts) and [1.3.0](https://github.com/earendil-works/pi/blob/v1.3.0/packages/ai/src/providers/all.ts) found one new provider, `typesafe`, and the Azure provider rename from `azure-openai-responses` to `azure`. The other built-in provider IDs were already present in the 0.87.1 baseline.
+
+### TypeSafe
+
+**Status:** No documented key-authenticated account-usage endpoint found in the reviewed documentation.
+
+Pi documents `typesafe` as a classifier provider. Classifier models do not appear in `/model`; they are called through the classifier API, so they are not the active chat model this extension monitors. That only prevents active-model footer monitoring; the blocker for account usage reporting is separate. TypeSafe's public `POST /v1/systemone` response reports token usage for that individual request and its docs describe per-organization rate limits and per-token pricing, but no key-authenticated account-level quota, balance, or period-spend endpoint is documented. Summing requests seen by Pi would omit activity from other clients and would not represent account usage.
+
+Sources: [Pi classifier models](https://github.com/earendil-works/pi/blob/v1.3.0/packages/coding-agent/docs/models.md#use-classifier-models), [TypeSafe API](https://docs.typesafe.ai/api/system-one), [TypeSafe model pricing and limits](https://docs.typesafe.ai/models).
+
+### Xiaomi MiMo Token Plan
+
+**Status:** Blocked — no documented key-authenticated account-usage endpoint found in the reviewed documentation as of 2026-10-20.
+
+Xiaomi's official documentation describes fixed monthly/annual Token Plan Credits and says current plan usage is available through the Token Plan progress bar/console. Its published API reference lists inference, rate-limit, and model endpoints, but no API-key-authenticated endpoint for remaining/used plan credits or reset time was found. Do not scrape the console or invent usage from requests observed by Pi. Revisit if Xiaomi publishes an authorized account-usage API.
+
+Sources: [Xiaomi Token Plan pricing and quota](https://mimo.mi.com/docs/en-US/price/token-plan), [Xiaomi Token Plan usage FAQ](https://mimo.mi.com/static/docs/quick-start/faq/token-plan/Usage&Quota.md), [Token Plan console](https://platform.xiaomimimo.com/token-plan), [published API reference](https://mimo.mi.com/llms.txt), [Pi provider authentication](https://github.com/earendil-works/pi/blob/v1.3.0/packages/coding-agent/docs/providers.md).
+
+### GitHub Copilot metrics
+
+**Status:** Not suitable for per-user usage bars through Pi's normal Copilot credential.
+
+GitHub's documented Copilot usage-metrics API returns organization or enterprise reports. The policy must be enabled for the enterprise, and access requires the relevant enterprise/org reporting permissions; the API is not a personal subscription balance or remaining-quota endpoint. Pi resolves a user's Copilot sign-in/token, which does not establish those administrator permissions or an organization context. Supporting enterprise reports would need a separate, explicitly configured admin credential and scope, and would still not provide a user's current personal quota.
+
+Source: [GitHub Copilot usage metrics API](https://docs.github.com/en/rest/copilot/copilot-usage-metrics).
+
 ## Acceptance criteria for a new provider
 
 A provider is suitable when a documented first-party API or response header supplies at least one meaningful account-level value:

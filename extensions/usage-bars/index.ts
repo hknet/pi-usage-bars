@@ -608,8 +608,8 @@ export default function (pi: ExtensionAPI): void {
   }
 
   function isClaudeSubscriptionAuth(source: string | undefined): boolean {
-    // Pi 0.84 exposes AuthResult.source as a human-readable label rather than a
-    // credential-type discriminator. Keep the compatibility assumption in one
+    // Pi exposes AuthResult.source as a human-readable label rather than a
+    // credential-type discriminator. Keep this source-label assumption in one
     // place until ModelRegistry exposes the resolved credential type directly.
     return source === "OAuth";
   }

@@ -35,11 +35,11 @@ OpenRouter shows the account credit balance and current daily, weekly, and month
 
 MiniMax Subscription Keys can represent an active Token Plan, purchased Credits, or both. The extension shows quota windows when present and a neutral credit-balance line if a first-party key-authenticated response exposes `points_balance`/`credits_balance`. MiniMax currently exposes Credits-only balances through a console endpoint requiring browser-cookie authentication, so a key-only Credits account is shown as “No active Token Plan” with a direction to check the console rather than a fabricated percentage. The extension does not import browser cookies.
 
-Google Gemini CLI and Google Antigravity are not supported because Pi removed those built-in providers in version 0.71.0.
+Google Gemini CLI and Google Antigravity are not supported because Pi removed those built-in providers in version 0.71.0. Pi 1.3.0 also adds the TypeSafe classifier, which is not an active chat model monitored by the footer. The reviewed TypeSafe and Xiaomi MiMo documentation does not describe a key-authenticated account-usage endpoint, so neither is currently supported; see [provider support research](docs/provider-research.md).
 
 ## Requirements
 
-- Pi 0.84.2 or newer (tested with the current Pi 0.87.1 release)
+- Pi 0.84.2 or newer (tested with Pi 1.3.0)
 - Node.js 22.19 or newer when using the npm-distributed Pi CLI
 
 Authenticate providers through Pi's `/login` command. The extension resolves credentials through Pi's provider API; it does not read or write `auth.json` itself.

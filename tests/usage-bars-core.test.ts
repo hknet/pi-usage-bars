@@ -160,6 +160,8 @@ describe("current Pi provider compatibility", () => {
     expect(detectProvider({ provider: "xai" })).toBe("xai");
     expect(detectProvider({ provider: "google-gemini-cli" })).toBeNull();
     expect(detectProvider({ provider: "google-antigravity" })).toBeNull();
+    expect(detectProvider({ provider: "typesafe" })).toBeNull();
+    expect(detectProvider({ provider: "xiaomi-token-plan-cn" })).toBeNull();
   });
 
   it("maps usage keys to Pi provider IDs", () => {
