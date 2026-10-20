@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.7.1] - 2026-10-20
+
 ### Changed
 
 - Updated the development and test baseline to Pi SDK 1.3.0; verified the extension loader and Kimi OAuth/xAI Management credential resolution with the Pi 1.3.0 CLI.
