@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Quota percentages above zero but below 1% now render as `<1%` instead of `0%`.
+
 ### Development
 
 - Added `npm run verify:tarball`, which packs the package and checks that every module reachable from the Pi extension entry point is in the tarball and imports only declared dependencies. CI, the manual publish workflow, and `scripts/release.sh` run it.

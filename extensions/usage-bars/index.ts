@@ -33,6 +33,7 @@ import {
   fetchVercelCredits,
   fetchXaiUsage,
   fetchZaiUsage,
+  formatPercent,
   providerToPiProviderId,
   resolveUsageEndpoints,
   type AccountBalance,
@@ -309,7 +310,7 @@ class UsageSelectorComponent extends Container implements Focusable {
         if (!item.data.sessionHidden) {
           this.listContainer.addChild(new Text(
             indent + theme.fg("muted", sessionLabel) + this.renderBar(session) + " " +
-              theme.fg(colorForPercent(session), `${session}%`.padStart(4)) + sessionReset,
+              theme.fg(colorForPercent(session), formatPercent(item.data.session).padStart(4)) + sessionReset,
             0,
             0,
           ));
@@ -317,7 +318,7 @@ class UsageSelectorComponent extends Container implements Focusable {
         if (!item.data.weeklyHidden) {
           this.listContainer.addChild(new Text(
             indent + theme.fg("muted", weeklyLabel) + this.renderBar(weekly) + " " +
-              theme.fg(colorForPercent(weekly), `${weekly}%`.padStart(4)) + weeklyReset,
+              theme.fg(colorForPercent(weekly), formatPercent(item.data.weekly).padStart(4)) + weeklyReset,
             0,
             0,
           ));
@@ -514,8 +515,7 @@ export default function (pi: ExtensionAPI): void {
   let providerPollController: AbortController | undefined;
 
   const renderPercent = (theme: Theme, value: number) => {
-    const percent = clampPercent(value);
-    return theme.fg(colorForPercent(percent), `${percent}%`);
+    return theme.fg(colorForPercent(clampPercent(value)), formatPercent(value));
   };
 
   const renderBar = (theme: Theme, value: number) => {
@@ -574,13 +574,13 @@ export default function (pi: ExtensionAPI): void {
     const quotaLanes: string[] = [];
     if (!data.sessionHidden) {
       quotaLanes.push(
-        theme.fg("muted", sessionPrefix) + renderBar(theme, session) + " " + renderPercent(theme, session) +
+        theme.fg("muted", sessionPrefix) + renderBar(theme, session) + " " + renderPercent(theme, data.session) +
           (data.sessionResetsIn ? theme.fg("dim", ` ⟳ ${data.sessionResetsIn}`) : ""),
       );
     }
     if (!data.weeklyHidden) {
       quotaLanes.push(
-        theme.fg("muted", "W ") + renderBar(theme, weekly) + " " + renderPercent(theme, weekly) +
+        theme.fg("muted", "W ") + renderBar(theme, weekly) + " " + renderPercent(theme, data.weekly) +
           (data.weeklyResetsIn ? theme.fg("dim", ` ⟳ ${data.weeklyResetsIn}`) : ""),
       );
     }

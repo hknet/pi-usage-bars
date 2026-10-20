@@ -1547,6 +1547,11 @@ export function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+export function formatPercent(value: number): string {
+  if (Number.isFinite(value) && value > 0 && value < 0.5) return "<1%";
+  return `${clampPercent(value)}%`;
+}
+
 export function colorForPercent(value: number): "success" | "warning" | "error" {
   if (value >= 90) return "error";
   if (value >= 70) return "warning";

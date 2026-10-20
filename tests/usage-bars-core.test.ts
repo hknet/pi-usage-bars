@@ -32,6 +32,7 @@ import {
   fetchXaiUsage,
   fetchZaiUsage,
   formatDuration,
+  formatPercent,
   formatResetsAt,
   parseRetryAfterMs,
   providerToPiProviderId,
@@ -118,6 +119,12 @@ describe("formatting and parsing", () => {
     expect(readLimitPercent({ utilization: 44 })).toBe(44);
     expect(readLimitPercent({ currentValue: 30, remaining: 70 })).toBe(30);
     expect(clampPercent(1000)).toBe(100);
+    expect(formatPercent(0)).toBe("0%");
+    expect(formatPercent(0.2)).toBe("<1%");
+    expect(formatPercent(0.6)).toBe("1%");
+    expect(formatPercent(42.4)).toBe("42%");
+    expect(formatPercent(150)).toBe("100%");
+    expect(formatPercent(Number.NaN)).toBe("0%");
     expect(colorForPercent(69)).toBe("success");
     expect(colorForPercent(70)).toBe("warning");
     expect(colorForPercent(90)).toBe("error");
