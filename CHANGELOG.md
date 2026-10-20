@@ -9,7 +9,7 @@
 ### Development
 
 - Added `npm run verify:tarball`, which packs the package and checks that every module reachable from the Pi extension entry point is in the tarball and imports only declared dependencies. CI, the manual publish workflow, and `scripts/release.sh` run it.
-- Pinned GitHub Actions to commit SHAs and updated the CI and release Bun version to 1.3.14.
+- Pinned GitHub Actions to commit SHAs and updated the CI, release, and `@types/bun` development baseline to Bun 1.4.3.
 
 ## [0.7.1] - 2026-10-20
 

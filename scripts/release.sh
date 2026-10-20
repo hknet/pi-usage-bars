@@ -18,7 +18,7 @@ fi
 
 set -euo pipefail
 
-BUN_VERSION="1.3.14"
+BUN_VERSION="1.4.3"
 NPM_REGISTRY="https://registry.npmjs.org"
 YES=false
 PHASE="prepare"
