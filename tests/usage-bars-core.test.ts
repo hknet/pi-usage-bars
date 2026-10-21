@@ -7,6 +7,7 @@ import {
   clampPercent,
   colorForPercent,
   detectProvider,
+  detectProviderRoute,
   extractBasetenUsageFromPayload,
   extractDeepSeekBalanceFromPayload,
   extractFireworksSpendFromPayload,
@@ -212,13 +213,27 @@ describe("current Pi provider compatibility", () => {
     expect(detectProvider({ provider: "anthropic", baseUrl: "https://litellm.example.com/anthropic" })).toBeNull();
     expect(detectProvider({ provider: "openai-codex", baseUrl: "https://proxy.example.com/backend-api" })).toBeNull();
     expect(detectProvider({ provider: "zai", baseUrl: "https://api.z.ai.example.com/api/coding/paas/v4" })).toBeNull();
-    expect(detectProvider({ provider: "openrouter", baseUrl: "https://ai-gateway.vercel.sh" })).toBeNull();
   });
 
   it("accepts documented OpenRouter regional endpoints only for OpenRouter", () => {
     expect(detectProvider({ provider: "openrouter", baseUrl: "https://us.openrouter.ai/api/v1" })).toBe("openrouter");
     expect(detectProvider({ provider: "openrouter", baseUrl: "https://evilopenrouter.ai/api/v1" })).toBeNull();
-    expect(detectProvider({ provider: "anthropic", baseUrl: "https://us.openrouter.ai/api/v1" })).toBeNull();
+  });
+
+  it("credits supported gateways with the model's own credential", () => {
+    expect(detectProviderRoute({ provider: "openrouter", baseUrl: "https://openrouter.ai/api/v1" }))
+      .toEqual({ provider: "openrouter", credential: "provider" });
+    expect(detectProviderRoute({ provider: "anthropic", baseUrl: "https://openrouter.ai/api" }))
+      .toEqual({ provider: "openrouter", credential: "model" });
+    expect(detectProviderRoute({ provider: "anthropic", baseUrl: "https://us.openrouter.ai/api/v1" }))
+      .toEqual({ provider: "openrouter", credential: "model" });
+    expect(detectProviderRoute({ provider: "my-gateway", baseUrl: "https://ai-gateway.vercel.sh" }))
+      .toEqual({ provider: "vercel", credential: "model" });
+    expect(detectProviderRoute({ provider: "openrouter", baseUrl: "https://ai-gateway.vercel.sh" }))
+      .toEqual({ provider: "vercel", credential: "model" });
+    expect(detectProviderRoute({ provider: "my-gateway", baseUrl: "https://evilopenrouter.ai/api/v1" })).toBeNull();
+    expect(detectProviderRoute({ provider: "my-gateway", baseUrl: "https://api.anthropic.com" })).toBeNull();
+    expect(detectProviderRoute({ provider: "my-gateway" })).toBeNull();
   });
 
   it("keeps provider-ID detection when the route is unknown", () => {

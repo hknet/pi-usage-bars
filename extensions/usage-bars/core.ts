@@ -1500,7 +1500,8 @@ export async function fetchZaiUsage(
 
 // Inference hosts Pi 1.3 uses for each supported provider. A model whose
 // baseUrl points elsewhere (a proxy, LiteLLM, or another gateway) does not spend
-// that provider's quota, so the footer shows no bar instead of a wrong one.
+// that provider's quota, so the footer shows no bar instead of a wrong one,
+// unless the host is a supported gateway.
 const PROVIDER_HOSTS: Record<ProviderKey, readonly string[]> = {
   codex: ["chatgpt.com"],
   claude: ["api.anthropic.com"],
@@ -1525,25 +1526,56 @@ const PROVIDER_HOST_SUFFIXES: Partial<Record<ProviderKey, string>> = {
   openrouter: ".openrouter.ai",
 };
 
-export function isProviderRoute(provider: ProviderKey, baseUrl: string | undefined): boolean {
-  if (typeof baseUrl !== "string" || !baseUrl.trim()) return true;
-  let host: string;
+// Gateways whose usage belongs to the key a model sends them, whatever Pi
+// provider ID the model is registered under.
+const GATEWAY_PROVIDERS: readonly ProviderKey[] = ["openrouter", "vercel"];
+
+// Where usage for the active model comes from. "provider" uses the credential
+// configured for the provider's own Pi provider ID; "model" uses the credential
+// Pi sends with the model itself, because the model reaches a gateway under
+// another provider ID.
+export type UsageCredentialSource = "provider" | "model";
+
+export interface ProviderRoute {
+  provider: ProviderKey;
+  credential: UsageCredentialSource;
+}
+
+function routeHost(baseUrl: string | undefined): string | undefined {
+  if (typeof baseUrl !== "string" || !baseUrl.trim()) return undefined;
   try {
-    host = new URL(baseUrl.trim()).hostname.replace(/\.$/, "");
+    return new URL(baseUrl.trim()).hostname.replace(/\.$/, "");
   } catch {
-    return true;
+    return undefined;
   }
+}
+
+function isProviderHost(provider: ProviderKey, host: string): boolean {
   if (PROVIDER_HOSTS[provider].includes(host)) return true;
   const suffix = PROVIDER_HOST_SUFFIXES[provider];
   return suffix !== undefined && host.endsWith(suffix);
 }
 
+export function isProviderRoute(provider: ProviderKey, baseUrl: string | undefined): boolean {
+  const host = routeHost(baseUrl);
+  return host === undefined || isProviderHost(provider, host);
+}
+
+export function detectProviderRoute(
+  model: { provider?: string; baseUrl?: string } | string | undefined | null,
+): ProviderRoute | null {
+  if (!model || typeof model === "string") return null;
+  const provider = providerFromId(model.provider);
+  if (provider && isProviderRoute(provider, model.baseUrl)) return { provider, credential: "provider" };
+  const host = routeHost(model.baseUrl);
+  const gateway = host === undefined ? undefined : GATEWAY_PROVIDERS.find((candidate) => isProviderHost(candidate, host));
+  return gateway ? { provider: gateway, credential: "model" } : null;
+}
+
 export function detectProvider(
   model: { provider?: string; baseUrl?: string } | string | undefined | null,
 ): ProviderKey | null {
-  if (!model || typeof model === "string") return null;
-  const provider = providerFromId(model.provider);
-  return provider && isProviderRoute(provider, model.baseUrl) ? provider : null;
+  return detectProviderRoute(model)?.provider ?? null;
 }
 
 function providerFromId(providerId: string | undefined): ProviderKey | null {

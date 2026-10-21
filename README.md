@@ -81,7 +81,9 @@ pi update npm:@hk_net/pi-usage-bars
 
 When the active model belongs to a configured supported provider, the footer shows its available quota windows with reset countdowns when provided by the service.
 
-The footer only shows a provider's quota when the model actually calls that provider. If `models.json` points a supported provider at another host, such as a local proxy, LiteLLM, or a different gateway, the footer stays empty instead of showing a quota that the request does not spend. OpenRouter regional hosts such as `us.openrouter.ai` count as OpenRouter. `/usage` still lists every configured account.
+The footer only shows a provider's quota when the model actually calls that provider. If `models.json` points a supported provider at another host, such as a local proxy or LiteLLM, the footer stays empty instead of showing a quota that the request does not spend. OpenRouter regional hosts such as `us.openrouter.ai` count as OpenRouter.
+
+A model routed to OpenRouter (`openrouter.ai`, `*.openrouter.ai`) or Vercel AI Gateway (`ai-gateway.vercel.sh`) under any other provider ID shows that gateway's usage instead. The footer then queries the gateway with the key Pi sends for that model, not the key configured for the `openrouter` or `vercel-ai-gateway` provider, so it reports the account the model actually spends. `/usage` still lists every configured account with its provider credentials.
 
 <img width="50%" alt="pi-usage-bars screenshot" src="https://github.com/user-attachments/assets/45bff327-bf23-4510-9d9e-290eb04878d3" />
 
@@ -102,7 +104,7 @@ Pass `--usage` to print one JSON line for the active model provider and exit wit
 pi --no-extensions -e C:\hk\code\pi-usage-bars\extensions\usage-bars\index.ts --usage
 ```
 
-The result has `status` set to `ok`, `unconfigured`, `unsupported`, or `error`. A supported provider routed through another host reports `unsupported`. No credential is included in the output.
+The result has `status` set to `ok`, `unconfigured`, `unsupported`, or `error`. A supported provider routed through another host reports `unsupported`, unless the host is a supported gateway. No credential is included in the output.
 
 ## Endpoint configuration
 

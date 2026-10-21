@@ -55,12 +55,14 @@ function createContext(
     token?: string;
     authHeaders?: Record<string, string>;
     baseUrl?: string;
+    modelToken?: string;
   } = {},
 ) {
   const statuses: Array<string | undefined> = [];
   const statusKeys: string[] = [];
   const notifications: string[] = [];
   let authCalls = 0;
+  let modelAuthCalls = 0;
   let customCalls = 0;
   let shutdownCalls = 0;
   const theme = {
@@ -94,6 +96,10 @@ function createContext(
         }
         return undefined;
       },
+      getApiKeyAndHeaders: async () => {
+        modelAuthCalls += 1;
+        return options.modelToken ? { ok: true, apiKey: options.modelToken } : { ok: true };
+      },
     },
   } as unknown as ExtensionCommandContext;
   return {
@@ -102,6 +108,7 @@ function createContext(
     statusKeys,
     notifications,
     authCalls: () => authCalls,
+    modelAuthCalls: () => modelAuthCalls,
     customCalls: () => customCalls,
     shutdownCalls: () => shutdownCalls,
   };
@@ -352,6 +359,72 @@ describe("usage-bars extension lifecycle", () => {
     });
     expect(mock.statuses.at(-1)).toContain("OpenRouter");
     expect(mock.statuses.at(-1)).toContain("$20.00");
+
+    harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
+  });
+
+  it("credits OpenRouter with the model's own key when another provider routes through it", async () => {
+    const authorizations: Array<string | null> = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      authorizations.push(new Headers(init?.headers).get("authorization"));
+      const body = String(input).endsWith("/credits")
+        ? { data: { total_credits: 50, total_usage: 10 } }
+        : { data: { limit: null, limit_remaining: null, usage_daily: 1, usage_weekly: 2, usage_monthly: 3 } };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const harness = createHarness();
+    const mock = createContext("tui", "anthropic", {
+      configured: true,
+      source: "Environment variable",
+      token: "openrouter-provider-key",
+      baseUrl: "https://openrouter.ai/api",
+      modelToken: "model-key",
+    });
+    harness.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, mock.context);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mock.modelAuthCalls()).toBe(1);
+    expect(mock.authCalls()).toBe(0);
+    expect(authorizations.length).toBeGreaterThan(0);
+    expect(authorizations.every((value) => value === "Bearer model-key")).toBeTrue();
+    expect(mock.statuses.at(-1)).toContain("OpenRouter");
+    expect(mock.statuses.at(-1)).toContain("$40.00");
+
+    harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
+  });
+
+  it("does not show another key's gateway usage after switching routes", async () => {
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const modelKey = new Headers(init?.headers).get("authorization") === "Bearer model-key";
+      const body = String(input).endsWith("/credits")
+        ? { data: { total_credits: modelKey ? 50 : 30, total_usage: 10 } }
+        : { data: { limit: null, limit_remaining: null, usage_daily: 1, usage_weekly: 2, usage_monthly: 3 } };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const harness = createHarness();
+    const mock = createContext("tui", "openrouter", {
+      configured: true,
+      source: "Environment variable",
+      token: "openrouter-provider-key",
+      modelToken: "model-key",
+    });
+    harness.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, mock.context);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(mock.statuses.at(-1)).toContain("$20.00");
+
+    harness.handlers.get("model_select")?.({
+      type: "model_select",
+      model: { provider: "anthropic", id: "routed-model", baseUrl: "https://openrouter.ai/api" },
+      previousModel: { provider: "openrouter", id: "test-model" },
+      source: "set",
+    }, mock.context);
+    expect(mock.statuses.at(-1)).toContain("loading");
+    expect(mock.statuses.at(-1)).not.toContain("$20.00");
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(mock.statuses.at(-1)).toContain("$40.00");
 
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
   });

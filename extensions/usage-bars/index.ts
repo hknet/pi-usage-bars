@@ -19,7 +19,7 @@ import {
 import {
   clampPercent,
   colorForPercent,
-  detectProvider,
+  detectProviderRoute,
   fetchAllUsages,
   fetchBasetenUsage,
   fetchClaudeUsageWithFallback,
@@ -40,6 +40,7 @@ import {
   type AccountSpend,
   type ProviderKey,
   type UsageByProvider,
+  type UsageCredentialSource,
   type UsageData,
   type UsageTokens,
   XAI_MANAGEMENT_PROVIDER_ID,
@@ -460,7 +461,12 @@ class UsageSelectorComponent extends Container implements Focusable {
 
 interface UsageState extends UsageByProvider {
   activeProvider: ProviderKey | null;
+  activeCredential: UsageCredentialSource;
+  activeModel: ExtensionContext["model"];
   available: Partial<Record<ProviderKey, boolean>>;
+  // The credential that produced each provider's footer data, so data fetched
+  // with one key is never shown for a route that uses another.
+  dataCredential: Partial<Record<ProviderKey, string>>;
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -504,7 +510,10 @@ export default function (pi: ExtensionAPI): void {
     fireworks: null,
     xai: null,
     activeProvider: null,
+    activeCredential: "provider",
+    activeModel: undefined,
     available: {},
+    dataCredential: {},
   };
 
   let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -530,12 +539,14 @@ export default function (pi: ExtensionAPI): void {
     const ctx = currentContext;
     if (!ctx || ctx.mode !== "tui") return;
     const provider = state.activeProvider;
-    if (!provider || state.available[provider] === false) {
+    const current = provider !== null &&
+      state.dataCredential[provider] === credentialKey(state.activeCredential, state.activeModel);
+    if (!provider || (current && state.available[provider] === false)) {
       ctx.ui.setStatus(STATUS_KEY, undefined);
       return;
     }
 
-    const data = state[provider];
+    const data = current ? state[provider] : null;
     const theme = ctx.ui.theme;
     const label = PROVIDER_LABELS[provider];
     if (!data) {
@@ -596,10 +607,18 @@ export default function (pi: ExtensionAPI): void {
     ctx.ui.setStatus(STATUS_KEY, status);
   }
 
+  function credentialKey(credential: UsageCredentialSource, model: ExtensionContext["model"]): string {
+    return credential === "model" ? `model:${model?.provider ?? ""}/${model?.id ?? ""}` : "provider";
+  }
+
   function updateProviderFrom(model: ExtensionContext["model"]): boolean {
-    const previous = state.activeProvider;
-    state.activeProvider = detectProvider(model);
-    if (previous !== state.activeProvider) {
+    const previousProvider = state.activeProvider;
+    const previousKey = credentialKey(state.activeCredential, state.activeModel);
+    const route = detectProviderRoute(model);
+    state.activeProvider = route?.provider ?? null;
+    state.activeCredential = route?.credential ?? "provider";
+    state.activeModel = model;
+    if (previousProvider !== state.activeProvider || previousKey !== credentialKey(state.activeCredential, model)) {
       providerPollController?.abort();
       updateStatus();
       return true;
@@ -637,50 +656,69 @@ export default function (pi: ExtensionAPI): void {
     }
   }
 
+  async function resolveModelCredential(
+    ctx: ExtensionContext,
+    model: ExtensionContext["model"],
+  ): Promise<CredentialResolution> {
+    if (!model) return {};
+    try {
+      const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+      if (!resolved.ok) return { error: resolved.error };
+      if (resolved.apiKey) return { token: resolved.apiKey };
+      const authorization = resolved.headers?.Authorization ?? resolved.headers?.authorization;
+      if (typeof authorization === "string" && authorization.startsWith("Bearer ")) {
+        return { token: authorization.slice("Bearer ".length) };
+      }
+      return {};
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  function fetchUsageWithToken(provider: ProviderKey, token: string, signal: AbortSignal): Promise<UsageData> {
+    switch (provider) {
+      case "codex": return fetchCodexUsage(token, { signal });
+      case "claude": return fetchClaudeUsageWithFallback(token, { signal });
+      case "zai": return fetchZaiUsage(token, "zai", { endpoints, signal });
+      case "zai-cn": return fetchZaiUsage(token, "zai-cn", { endpoints, signal });
+      case "kimi": return fetchKimiUsage(token, { endpoints, signal });
+      case "minimax": return fetchMiniMaxUsage(token, "minimax", { endpoints, signal });
+      case "minimax-cn": return fetchMiniMaxUsage(token, "minimax-cn", { endpoints, signal });
+      case "openrouter": return fetchOpenRouterUsage(token, { endpoints, signal });
+      case "deepseek": return fetchDeepSeekBalance(token, { endpoints, signal });
+      case "moonshot": return fetchMoonshotBalance(token, "moonshot", { endpoints, signal });
+      case "moonshot-cn": return fetchMoonshotBalance(token, "moonshot-cn", { endpoints, signal });
+      case "baseten": return fetchBasetenUsage(token, { endpoints, signal });
+      case "vercel": return fetchVercelCredits(token, { endpoints, signal });
+      case "fireworks": return fetchFireworksUsage(token, { endpoints, signal });
+      case "xai": return fetchXaiUsage(token, { endpoints, signal });
+    }
+  }
+
   async function fetchProvider(
     ctx: ExtensionContext,
     provider: ProviderKey,
     signal: AbortSignal,
+    credentialSource: UsageCredentialSource = "provider",
   ): Promise<void> {
-    const credential = await resolveCredential(ctx, provider);
+    const model = state.activeModel;
+    const credential = credentialSource === "model"
+      ? await resolveModelCredential(ctx, model)
+      : await resolveCredential(ctx, provider);
     if (signal.aborted) return;
-    state.available[provider] = Boolean(credential.token || credential.error);
-    if (credential.error) {
-      state[provider] = { session: 0, weekly: 0, error: `auth resolution failed (${credential.error})` };
-      return;
-    }
-    if (!credential.token) {
-      state[provider] = null;
-      return;
-    }
 
-    if (provider === "codex") state.codex = await fetchCodexUsage(credential.token, { signal });
-    if (provider === "claude") state.claude = await fetchClaudeUsageWithFallback(credential.token, { signal });
-    if (provider === "zai") state.zai = await fetchZaiUsage(credential.token, "zai", { endpoints, signal });
-    if (provider === "zai-cn") state["zai-cn"] = await fetchZaiUsage(credential.token, "zai-cn", { endpoints, signal });
-    if (provider === "kimi") state.kimi = await fetchKimiUsage(credential.token, { endpoints, signal });
-    if (provider === "minimax") {
-      state.minimax = await fetchMiniMaxUsage(credential.token, "minimax", { endpoints, signal });
+    let data: UsageData | null = null;
+    if (credential.error) {
+      data = { session: 0, weekly: 0, error: `auth resolution failed (${credential.error})` };
+    } else if (credential.token) {
+      data = await fetchUsageWithToken(provider, credential.token, signal);
+      if (signal.aborted) return;
     }
-    if (provider === "minimax-cn") {
-      state["minimax-cn"] = await fetchMiniMaxUsage(credential.token, "minimax-cn", { endpoints, signal });
-    }
-    if (provider === "openrouter") {
-      state.openrouter = await fetchOpenRouterUsage(credential.token, { endpoints, signal });
-    }
-    if (provider === "deepseek") {
-      state.deepseek = await fetchDeepSeekBalance(credential.token, { endpoints, signal });
-    }
-    if (provider === "moonshot") {
-      state.moonshot = await fetchMoonshotBalance(credential.token, "moonshot", { endpoints, signal });
-    }
-    if (provider === "moonshot-cn") {
-      state["moonshot-cn"] = await fetchMoonshotBalance(credential.token, "moonshot-cn", { endpoints, signal });
-    }
-    if (provider === "baseten") state.baseten = await fetchBasetenUsage(credential.token, { endpoints, signal });
-    if (provider === "vercel") state.vercel = await fetchVercelCredits(credential.token, { endpoints, signal });
-    if (provider === "fireworks") state.fireworks = await fetchFireworksUsage(credential.token, { endpoints, signal });
-    if (provider === "xai") state.xai = await fetchXaiUsage(credential.token, { endpoints, signal });
+    // Commit the data together with the credential that produced it, so a
+    // fetch for a previous route can never be shown for the current one.
+    state[provider] = data;
+    state.available[provider] = Boolean(credential.token || credential.error);
+    state.dataCredential[provider] = credentialKey(credentialSource, model);
   }
 
   async function runPoll(): Promise<void> {
@@ -696,7 +734,7 @@ export default function (pi: ExtensionAPI): void {
     providerPollController = controller;
     const signal = AbortSignal.any([sessionSignal, controller.signal]);
     try {
-      await fetchProvider(ctx, provider, signal);
+      await fetchProvider(ctx, provider, signal, state.activeCredential);
       if (signal.aborted) return;
       const data = state[provider];
       if (data && !data.error) pi.events.emit(USAGE_UPDATE_EVENT, { provider, ...data });
@@ -754,7 +792,7 @@ export default function (pi: ExtensionAPI): void {
       if (!provider) {
         console.log(JSON.stringify({ extension: EXTENSION_ID, status: "unsupported", provider: ctx.model?.provider }));
       } else {
-        await fetchProvider(ctx, provider, sessionController.signal);
+        await fetchProvider(ctx, provider, sessionController.signal, state.activeCredential);
         const data = state[provider];
         console.log(JSON.stringify({
           extension: EXTENSION_ID,
