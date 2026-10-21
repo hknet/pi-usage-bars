@@ -32,7 +32,7 @@ It adds:
 
 DeepSeek shows total, topped-up, and granted balances in the currency returned by the API. Moonshot shows available, cash, and voucher balances; this is separate from the Kimi For Coding subscription provider. Pi uses `MOONSHOT_API_KEY` for both Moonshot regions, so `/usage` automatically hides the expected authentication failure from the region where a shared environment key is not valid.
 
-OpenRouter shows the account credit balance and current daily, weekly, and monthly key spend. If the API key has a configured credit limit, that limit is also rendered as a usage bar. Baseten shows current calendar-month credits used, aggregated across its documented dedicated, training, and Model APIs billing categories; it does not invent a remaining-balance or quota percentage. Vercel AI Gateway shows the team's remaining AI Gateway Credits balance and lifetime spend. Fireworks shows account-wide rated spend for the current UTC calendar month. Its high default monthly-spend quota is not treated as a useful budget percentage. xAI shows the team's prepaid balance and current billing-cycle spend.
+OpenRouter shows the account credit balance and current daily, weekly, and monthly key spend. If the API key has a configured credit limit, that limit is also rendered as a usage bar with the amount used and the limit, for example `75% $15/$20`. Baseten shows current calendar-month credits used, aggregated across its documented dedicated, training, and Model APIs billing categories; it does not invent a remaining-balance or quota percentage. Vercel AI Gateway shows the team's remaining AI Gateway Credits balance and lifetime spend. Fireworks shows account-wide rated spend for the current UTC calendar month. Its high default monthly-spend quota is not treated as a useful budget percentage. xAI shows the team's prepaid balance and current billing-cycle spend.
 
 MiniMax Subscription Keys can represent an active Token Plan, purchased Credits, or both. The extension shows quota windows when present and a neutral credit-balance line if a first-party key-authenticated response exposes `points_balance`/`credits_balance`. MiniMax currently exposes Credits-only balances through a console endpoint requiring browser-cookie authentication, so a key-only Credits account is shown as “No active Token Plan” with a direction to check the console rather than a fabricated percentage. The extension does not import browser cookies.
 
@@ -80,6 +80,8 @@ pi update npm:@hk_net/pi-usage-bars
 ### Footer usage bars
 
 When the active model belongs to a configured supported provider, the footer shows its available quota windows with reset countdowns when provided by the service.
+
+When a provider reports the amounts behind a quota window, the footer and `/usage` show them next to the percentage: the OpenRouter key limit in the reported currency (`$15/$20`), and Kimi and MiniMax windows as plain counts (`50/200`). Kimi and MiniMax do not document what those counts measure, so they carry no unit. The footer abbreviates amounts from 10,000 upward (`12.5K`); `/usage` shows them in full.
 
 The footer only shows a provider's quota when the model actually calls that provider. If `models.json` points a supported provider at another host, such as a local proxy or LiteLLM, the footer stays empty instead of showing a quota that the request does not spend. OpenRouter regional hosts such as `us.openrouter.ai` count as OpenRouter.
 

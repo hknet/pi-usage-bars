@@ -292,6 +292,8 @@ describe("usage-bars extension lifecycle", () => {
       data: expect.objectContaining({ provider: "kimi", session: 25, weekly: 25 }),
     });
     expect(mock.statuses.at(-1)).toContain("Kimi");
+    expect(mock.statuses.at(-1)).toContain("25% 50/200");
+    expect(mock.statuses.at(-1)).toContain("25% 512/2,048");
     expect(requestHeaders).toMatchObject({ Authorization: "Bearer kimi-token-from-header" });
 
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);

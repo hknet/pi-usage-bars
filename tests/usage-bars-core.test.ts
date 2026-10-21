@@ -35,6 +35,7 @@ import {
   fetchZaiUsage,
   formatDuration,
   formatPercent,
+  formatQuota,
   formatResetsAt,
   isProviderRoute,
   parseRetryAfterMs,
@@ -128,6 +129,14 @@ describe("formatting and parsing", () => {
     expect(formatPercent(42.4)).toBe("42%");
     expect(formatPercent(150)).toBe("100%");
     expect(formatPercent(Number.NaN)).toBe("0%");
+    expect(formatQuota({ used: 21, limit: 50, unit: "USD" })).toBe("$21.00 / $50.00");
+    expect(formatQuota({ used: 21, limit: 50, unit: "USD" }, true)).toBe("$21/$50");
+    expect(formatQuota({ used: 21.375, limit: 50, unit: "EUR" }, true)).toBe("€21.38/€50");
+    expect(formatQuota({ used: 12_500, limit: 50_000, unit: "USD" }, true)).toBe("$12.5K/$50K");
+    expect(formatQuota({ used: 512, limit: 2048 })).toBe("512 / 2,048");
+    expect(formatQuota({ used: 512, limit: 2048 }, true)).toBe("512/2,048");
+    expect(formatQuota({ used: 1_250_000, limit: 4_000_000 }, true)).toBe("1.3M/4M");
+    expect(formatQuota({ used: 3, limit: 10, unit: "credits" })).toBe("3 credits / 10 credits");
     expect(colorForPercent(69)).toBe("success");
     expect(colorForPercent(70)).toBe("warning");
     expect(colorForPercent(90)).toBe("error");
@@ -637,6 +646,8 @@ describe("provider fetchers", () => {
     expect(extractKimiUsageFromPayload(payload)).toMatchObject({
       session: 25,
       weekly: 25,
+      sessionQuota: { used: 50, limit: 200 },
+      weeklyQuota: { used: 512, limit: 2048 },
       sessionLabel: "5-hour",
       weeklyLabel: "Weekly",
     });
@@ -668,6 +679,9 @@ describe("provider fetchers", () => {
     expect(modelRemains).toMatchObject({
       session: 40,
       weekly: 25,
+      // usage_count is the remaining count, so used = total - usage_count.
+      sessionQuota: { used: 40, limit: 100 },
+      weeklyQuota: { used: 250, limit: 1000 },
       sessionLabel: "Interval",
       weeklyHidden: false,
       sessionResetsIn: "1h",
@@ -679,6 +693,12 @@ describe("provider fetchers", () => {
       { service_type: "standard", window_type: "weekly", percent: "45" },
       { service_type: "highspeed", window_type: "rolling", percent: 55 },
     ] } })).toMatchObject({ session: 55, weekly: 45, weeklyHidden: false });
+
+    const counted = extractMiniMaxUsageFromPayload({ data: { services: [
+      { service_type: "standard", window_type: "rolling", usage: 30, limit: 100 },
+    ] } });
+    expect(counted?.sessionQuota).toEqual({ used: 30, limit: 100 });
+    expect(counted?.weeklyQuota).toBeUndefined();
   });
 
   it("uses separate MiniMax Global and China endpoints with legacy fallback", async () => {
@@ -782,6 +802,7 @@ describe("provider fetchers", () => {
       usage_monthly: 7,
     } })).toMatchObject({
       session: 75,
+      sessionQuota: { used: 15, limit: 20, unit: "USD" },
       quotaHidden: false,
       weeklyHidden: true,
       sessionLabel: "Key limit",

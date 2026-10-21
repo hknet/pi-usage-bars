@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Quota bars now show the amounts behind the percentage when the provider reports them, in the footer and in `/usage`: the OpenRouter key limit in its reported currency, and Kimi and MiniMax windows as unlabeled counts.
+
 ### Changed
 
 - Quota percentages above zero but below 1% now render as `<1%` instead of `0%`.

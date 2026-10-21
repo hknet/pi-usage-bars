@@ -33,7 +33,9 @@ import {
   fetchVercelCredits,
   fetchXaiUsage,
   fetchZaiUsage,
+  formatFinancialAmount,
   formatPercent,
+  formatQuota,
   providerToPiProviderId,
   resolveUsageEndpoints,
   type AccountBalance,
@@ -88,19 +90,6 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   fireworks: "Fireworks",
   xai: "xAI",
 };
-
-function formatFinancialAmount(amount: number, unit: string): string {
-  if (/^[A-Z]{3}$/.test(unit)) {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: unit,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 5,
-    }).format(amount);
-  }
-  const formatted = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(amount);
-  return `${formatted} ${unit}`;
-}
 
 function formatAccountBalance(balance: AccountBalance): string {
   return `${balance.label} · ${formatFinancialAmount(balance.amount, balance.unit)}`;
@@ -311,7 +300,9 @@ class UsageSelectorComponent extends Container implements Focusable {
         if (!item.data.sessionHidden) {
           this.listContainer.addChild(new Text(
             indent + theme.fg("muted", sessionLabel) + this.renderBar(session) + " " +
-              theme.fg(colorForPercent(session), formatPercent(item.data.session).padStart(4)) + sessionReset,
+              theme.fg(colorForPercent(session), formatPercent(item.data.session).padStart(4)) +
+              (item.data.sessionQuota ? theme.fg("muted", `  ${formatQuota(item.data.sessionQuota)}`) : "") +
+              sessionReset,
             0,
             0,
           ));
@@ -319,7 +310,9 @@ class UsageSelectorComponent extends Container implements Focusable {
         if (!item.data.weeklyHidden) {
           this.listContainer.addChild(new Text(
             indent + theme.fg("muted", weeklyLabel) + this.renderBar(weekly) + " " +
-              theme.fg(colorForPercent(weekly), formatPercent(item.data.weekly).padStart(4)) + weeklyReset,
+              theme.fg(colorForPercent(weekly), formatPercent(item.data.weekly).padStart(4)) +
+              (item.data.weeklyQuota ? theme.fg("muted", `  ${formatQuota(item.data.weeklyQuota)}`) : "") +
+              weeklyReset,
             0,
             0,
           ));
@@ -586,12 +579,14 @@ export default function (pi: ExtensionAPI): void {
     if (!data.sessionHidden) {
       quotaLanes.push(
         theme.fg("muted", sessionPrefix) + renderBar(theme, session) + " " + renderPercent(theme, data.session) +
+          (data.sessionQuota ? theme.fg("muted", ` ${formatQuota(data.sessionQuota, true)}`) : "") +
           (data.sessionResetsIn ? theme.fg("dim", ` ⟳ ${data.sessionResetsIn}`) : ""),
       );
     }
     if (!data.weeklyHidden) {
       quotaLanes.push(
         theme.fg("muted", "W ") + renderBar(theme, weekly) + " " + renderPercent(theme, data.weekly) +
+          (data.weeklyQuota ? theme.fg("muted", ` ${formatQuota(data.weeklyQuota, true)}`) : "") +
           (data.weeklyResetsIn ? theme.fg("dim", ` ⟳ ${data.weeklyResetsIn}`) : ""),
       );
     }

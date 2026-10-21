@@ -49,9 +49,19 @@ export interface AccountSpend {
   lifetime?: number;
 }
 
+// Used and allowed amounts behind a quota bar. A three-letter unit is an ISO
+// currency code; no unit means a count the provider does not label.
+export interface AccountQuota {
+  used: number;
+  limit: number;
+  unit?: string;
+}
+
 export interface UsageData {
   session: number;
   weekly: number;
+  sessionQuota?: AccountQuota;
+  weeklyQuota?: AccountQuota;
   quotaHidden?: boolean;
   accountBalance?: AccountBalance;
   accountBalanceDetails?: AccountBalance[];
@@ -491,6 +501,8 @@ function snapshotUsage(usage: UsageData, nowMs = Date.now()): UsageData {
   return {
     session: usage.session,
     weekly: usage.weekly,
+    sessionQuota: usage.sessionQuota,
+    weeklyQuota: usage.weeklyQuota,
     quotaHidden: usage.quotaHidden,
     accountBalance: usage.accountBalance,
     accountBalanceDetails: usage.accountBalanceDetails,
@@ -714,6 +726,19 @@ function usedPercentFromCounts(
   return null;
 }
 
+function quotaFromCounts(
+  value: Record<string, unknown> | null | undefined,
+  options: { used?: string; total?: string; remaining?: string } = {},
+): AccountQuota | undefined {
+  if (!value) return undefined;
+  const total = readNumber(value[options.total ?? "limit"]);
+  if (total === null || total <= 0) return undefined;
+  const used = readNumber(value[options.used ?? "used"]);
+  const remaining = readNumber(value[options.remaining ?? "remaining"]);
+  const amount = used ?? (remaining === null ? null : total - remaining);
+  return amount === null ? undefined : { used: Math.max(0, amount), limit: total };
+}
+
 function normalizeIsoDate(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const normalized = value.trim().replace(/(\.\d{3})\d+(?=Z|[+-]\d\d:\d\d$)/, "$1");
@@ -763,6 +788,8 @@ export function extractKimiUsageFromPayload(payload: unknown, nowMs = Date.now()
   const weeklyReset = normalizeIsoDate(usage?.resetTime ?? usage?.reset_at ?? usage?.reset_time);
   return hydrateUsageResets({
     ...normalizeUsagePair(session, weekly),
+    sessionQuota: quotaFromCounts(sessionDetail),
+    weeklyQuota: quotaFromCounts(usage),
     sessionLabel: "5-hour",
     weeklyLabel: "Weekly",
     sessionResetsAt: sessionReset,
@@ -789,6 +816,7 @@ export async function fetchKimiUsage(token: string, config: FetchConfig = {}): P
 interface MiniMaxWindow {
   percent: number;
   resetsAt?: string;
+  quota?: AccountQuota;
 }
 
 function pickHighestWindow(windows: MiniMaxWindow[]): MiniMaxWindow | undefined {
@@ -839,7 +867,8 @@ export function extractMiniMaxUsageFromPayload(payload: unknown, nowMs = Date.no
       if (percent === null) continue;
       const windowType = String(service.window_type ?? service.windowType ?? "").toLowerCase();
       const resetsAt = normalizeIsoDate(service.resets_at ?? service.reset_time ?? service.end_time);
-      (windowType.includes("week") ? weeklyWindows : intervalWindows).push({ percent, resetsAt });
+      const quota = quotaFromCounts(service, { total: "limit", used: "usage" });
+      (windowType.includes("week") ? weeklyWindows : intervalWindows).push({ percent, resetsAt, quota });
     }
   }
 
@@ -871,7 +900,11 @@ export function extractMiniMaxUsageFromPayload(payload: unknown, nowMs = Date.no
         remaining: "current_interval_usage_count",
       });
       if (interval !== null) {
-        intervalWindows.push({ percent: interval, resetsAt: miniMaxResetAt(model, "current", nowMs) });
+        intervalWindows.push({
+          percent: interval,
+          resetsAt: miniMaxResetAt(model, "current", nowMs),
+          quota: quotaFromCounts(model, { total: "current_interval_total_count", remaining: "current_interval_usage_count" }),
+        });
       }
       const weekly = unavailable("weekly") ? null : usedPercentFromCounts(model, {
         remainingPercent: "current_weekly_remaining_percent",
@@ -879,7 +912,11 @@ export function extractMiniMaxUsageFromPayload(payload: unknown, nowMs = Date.no
         remaining: "current_weekly_usage_count",
       });
       if (weekly !== null) {
-        weeklyWindows.push({ percent: weekly, resetsAt: miniMaxResetAt(model, "weekly", nowMs) });
+        weeklyWindows.push({
+          percent: weekly,
+          resetsAt: miniMaxResetAt(model, "weekly", nowMs),
+          quota: quotaFromCounts(model, { total: "current_weekly_total_count", remaining: "current_weekly_usage_count" }),
+        });
       }
     }
   }
@@ -895,6 +932,8 @@ export function extractMiniMaxUsageFromPayload(payload: unknown, nowMs = Date.no
     session: Number(session.percent.toFixed(2)),
     accountBalance,
     weekly: Number((weekly?.percent ?? 0).toFixed(2)),
+    sessionQuota: session.quota,
+    weeklyQuota: weekly?.quota,
     sessionLabel: "Interval",
     weeklyLabel: "Weekly",
     weeklyHidden: !weekly,
@@ -1020,6 +1059,7 @@ export function extractOpenRouterUsageFromPayloads(
     weekly: 0,
     quotaHidden: limitPercent === null,
     weeklyHidden: true,
+    sessionQuota: limitUsed !== null && limit !== null ? { used: limitUsed, limit, unit: "USD" } : undefined,
     sessionLabel: "Key limit",
     accountBalance,
     accountSpend,
@@ -1627,6 +1667,43 @@ export function clampPercent(value: number): number {
 export function formatPercent(value: number): string {
   if (Number.isFinite(value) && value > 0 && value < 0.5) return "<1%";
   return `${clampPercent(value)}%`;
+}
+
+export function formatFinancialAmount(amount: number, unit: string): string {
+  if (/^[A-Z]{3}$/.test(unit)) {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: unit,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 5,
+    }).format(amount);
+  }
+  const formatted = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(amount);
+  return `${formatted} ${unit}`;
+}
+
+function formatQuotaAmount(amount: number, unit: string | undefined, compact: boolean): string {
+  const currency = unit !== undefined && /^[A-Z]{3}$/.test(unit) ? unit : undefined;
+  if (!compact) {
+    if (currency) return formatFinancialAmount(amount, currency);
+    const formatted = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(amount);
+    return unit ? `${formatted} ${unit}` : formatted;
+  }
+  const options: Intl.NumberFormatOptions = Math.abs(amount) >= 10_000
+    ? { notation: "compact", maximumFractionDigits: 1 }
+    : { maximumFractionDigits: 2 };
+  if (currency) {
+    return new Intl.NumberFormat("en-US", { ...options, style: "currency", currency, minimumFractionDigits: 0 })
+      .format(amount);
+  }
+  const formatted = new Intl.NumberFormat("en-US", options).format(amount);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+export function formatQuota(quota: AccountQuota, compact = false): string {
+  const separator = compact ? "/" : " / ";
+  return formatQuotaAmount(quota.used, quota.unit, compact) + separator +
+    formatQuotaAmount(quota.limit, quota.unit, compact);
 }
 
 export function colorForPercent(value: number): "success" | "warning" | "error" {
