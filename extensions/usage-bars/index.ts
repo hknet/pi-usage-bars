@@ -40,6 +40,7 @@ import {
   resolveUsageEndpoints,
   type AccountBalance,
   type AccountSpend,
+  type FetchLike,
   type ProviderKey,
   type UsageByProvider,
   type UsageCredentialSource,
@@ -462,7 +463,15 @@ interface UsageState extends UsageByProvider {
   dataCredential: Partial<Record<ProviderKey, string>>;
 }
 
-export default function (pi: ExtensionAPI): void {
+// Optional seams for tests and embedders. Pi calls the extension with the API
+// only, so every dependency falls back to the real implementation.
+export interface UsageBarsDependencies {
+  fetchFn?: FetchLike;
+  env?: NodeJS.ProcessEnv;
+  cacheFile?: string;
+}
+
+export default function (pi: ExtensionAPI, dependencies: UsageBarsDependencies = {}): void {
   // xAI exposes billing only through a separate Management Key. Register a
   // model-less provider so Pi owns secret prompting, storage, and resolution;
   // the key can never be selected for or sent to inference.
@@ -485,7 +494,8 @@ export default function (pi: ExtensionAPI): void {
     default: false,
   });
 
-  const endpoints = resolveUsageEndpoints();
+  const endpoints = resolveUsageEndpoints(dependencies.env);
+  const requestConfig = { endpoints, fetchFn: dependencies.fetchFn, cacheFile: dependencies.cacheFile };
   const state: UsageState = {
     codex: null,
     claude: null,
@@ -671,22 +681,23 @@ export default function (pi: ExtensionAPI): void {
   }
 
   function fetchUsageWithToken(provider: ProviderKey, token: string, signal: AbortSignal): Promise<UsageData> {
+    const config = { ...requestConfig, signal };
     switch (provider) {
-      case "codex": return fetchCodexUsage(token, { signal });
-      case "claude": return fetchClaudeUsageWithFallback(token, { signal });
-      case "zai": return fetchZaiUsage(token, "zai", { endpoints, signal });
-      case "zai-cn": return fetchZaiUsage(token, "zai-cn", { endpoints, signal });
-      case "kimi": return fetchKimiUsage(token, { endpoints, signal });
-      case "minimax": return fetchMiniMaxUsage(token, "minimax", { endpoints, signal });
-      case "minimax-cn": return fetchMiniMaxUsage(token, "minimax-cn", { endpoints, signal });
-      case "openrouter": return fetchOpenRouterUsage(token, { endpoints, signal });
-      case "deepseek": return fetchDeepSeekBalance(token, { endpoints, signal });
-      case "moonshot": return fetchMoonshotBalance(token, "moonshot", { endpoints, signal });
-      case "moonshot-cn": return fetchMoonshotBalance(token, "moonshot-cn", { endpoints, signal });
-      case "baseten": return fetchBasetenUsage(token, { endpoints, signal });
-      case "vercel": return fetchVercelCredits(token, { endpoints, signal });
-      case "fireworks": return fetchFireworksUsage(token, { endpoints, signal });
-      case "xai": return fetchXaiUsage(token, { endpoints, signal });
+      case "codex": return fetchCodexUsage(token, config);
+      case "claude": return fetchClaudeUsageWithFallback(token, config);
+      case "zai": return fetchZaiUsage(token, "zai", config);
+      case "zai-cn": return fetchZaiUsage(token, "zai-cn", config);
+      case "kimi": return fetchKimiUsage(token, config);
+      case "minimax": return fetchMiniMaxUsage(token, "minimax", config);
+      case "minimax-cn": return fetchMiniMaxUsage(token, "minimax-cn", config);
+      case "openrouter": return fetchOpenRouterUsage(token, config);
+      case "deepseek": return fetchDeepSeekBalance(token, config);
+      case "moonshot": return fetchMoonshotBalance(token, "moonshot", config);
+      case "moonshot-cn": return fetchMoonshotBalance(token, "moonshot-cn", config);
+      case "baseten": return fetchBasetenUsage(token, config);
+      case "vercel": return fetchVercelCredits(token, config);
+      case "fireworks": return fetchFireworksUsage(token, config);
+      case "xai": return fetchXaiUsage(token, config);
     }
   }
 
@@ -765,7 +776,7 @@ export default function (pi: ExtensionAPI): void {
       if (resolution.error) authErrors[provider] = resolution.error;
     }
 
-    const results = await fetchAllUsages(tokens, { endpoints, signal });
+    const results = await fetchAllUsages(tokens, { ...requestConfig, signal });
     for (const provider of PROVIDERS) {
       const error = authErrors[provider];
       if (error) results[provider] = { session: 0, weekly: 0, error: `auth resolution failed (${error})` };

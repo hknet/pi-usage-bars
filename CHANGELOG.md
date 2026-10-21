@@ -14,6 +14,7 @@
 
 ### Development
 
+- The extension entry point accepts optional `fetchFn`, `env`, and `cacheFile` dependencies; Pi still calls it with the API only. Extension tests inject them instead of replacing `globalThis.fetch`, run with an empty environment, use a private cache file each, and fail on any request they do not stub.
 - Added `npm run verify:tarball`, which packs the package and checks that every module reachable from the Pi extension entry point is in the tarball and imports only declared dependencies. CI, the manual publish workflow, and `scripts/release.sh` run it.
 - Pinned GitHub Actions to commit SHAs and updated the CI, release, and `@types/bun` development baseline to Bun 1.4.3.
 
