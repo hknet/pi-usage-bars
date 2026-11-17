@@ -29,6 +29,7 @@ It adds:
 | Vercel AI Gateway | `vercel-ai-gateway` | AI Gateway API key |
 | Fireworks AI | `fireworks` | Fireworks API key |
 | xAI | `xai` | Separate read-only xAI Management Key |
+| OpenCode Go | `opencode-go` | OpenCode API key |
 
 DeepSeek shows total, topped-up, and granted balances in the currency returned by the API. Moonshot shows available, cash, and voucher balances; this is separate from the Kimi For Coding subscription provider. Pi uses `MOONSHOT_API_KEY` for both Moonshot regions, so `/usage` automatically hides the expected authentication failure from the region where a shared environment key is not valid.
 

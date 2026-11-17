@@ -29,6 +29,7 @@ import {
   fetchKimiUsage,
   fetchMiniMaxUsage,
   fetchMoonshotBalance,
+  fetchOpenCodeGoUsage,
   fetchOpenRouterUsage,
   fetchVercelCredits,
   fetchXaiUsage,
@@ -66,6 +67,7 @@ const PROVIDERS: readonly ProviderKey[] = [
   "minimax",
   "minimax-cn",
   "openrouter",
+  "opencode-go",
   "deepseek",
   "moonshot",
   "moonshot-cn",
@@ -84,6 +86,7 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   minimax: "MiniMax Coding Plan (Global)",
   "minimax-cn": "MiniMax Coding Plan (China)",
   openrouter: "OpenRouter",
+  "opencode-go": "OpenCode Go",
   deepseek: "DeepSeek",
   moonshot: "Moonshot/Kimi API (Global)",
   "moonshot-cn": "Moonshot/Kimi API (China)",
@@ -125,6 +128,9 @@ function quotaBars(data: UsageData): QuotaBar[] {
       quota: data.weeklyQuota,
       reset: data.weeklyResetsIn,
     });
+  }
+  if (data.monthly !== undefined) {
+    bars.push({ label: "Monthly", prefix: "M", percent: data.monthly, reset: data.monthlyResetsIn });
   }
   return bars;
 }
@@ -519,6 +525,7 @@ export default function (pi: ExtensionAPI, dependencies: UsageBarsDependencies =
     minimax: null,
     "minimax-cn": null,
     openrouter: null,
+    "opencode-go": null,
     deepseek: null,
     moonshot: null,
     "moonshot-cn": null,
@@ -685,6 +692,7 @@ export default function (pi: ExtensionAPI, dependencies: UsageBarsDependencies =
       case "minimax": return fetchMiniMaxUsage(token, "minimax", config);
       case "minimax-cn": return fetchMiniMaxUsage(token, "minimax-cn", config);
       case "openrouter": return fetchOpenRouterUsage(token, config);
+      case "opencode-go": return fetchOpenCodeGoUsage(token, config);
       case "deepseek": return fetchDeepSeekBalance(token, config);
       case "moonshot": return fetchMoonshotBalance(token, "moonshot", config);
       case "moonshot-cn": return fetchMoonshotBalance(token, "moonshot-cn", config);

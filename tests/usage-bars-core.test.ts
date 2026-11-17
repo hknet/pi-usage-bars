@@ -193,6 +193,7 @@ describe("current Pi provider compatibility", () => {
       "minimax",
       "minimax-cn",
       "openrouter",
+      "opencode-go",
       "deepseek",
       "moonshotai",
       "moonshotai-cn",

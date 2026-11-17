@@ -351,6 +351,55 @@ describe("usage-bars extension lifecycle", () => {
     harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, mock.context);
   });
 
+  it("renders OpenCode Go quota windows in the footer and /usage", async () => {
+    const harness = createHarness({ fetchFn: async () => Response.json({ usage: {
+      rolling: { status: "ok", percent: 25 },
+      weekly: { status: "ok", percent: 45 },
+      monthly: { status: "ok", percent: 65 },
+    } }) });
+    const mock = createContext("tui", "opencode-go", {
+      configured: true,
+      token: "go-key",
+      baseUrl: "https://opencode.ai/inference/go/openai/v1",
+    });
+    const context = mock.context as any;
+    context.modelRegistry.getProvider = (provider: string) =>
+      provider === "opencode-go" ? { baseUrl: "https://proxy.example/go" } : undefined;
+    let rendered = "";
+    context.ui.custom = async (factory: (...args: any[]) => any) => {
+      let loaded!: () => void;
+      const ready = new Promise<void>((resolve) => { loaded = resolve; });
+      const component = factory({ terminal: { rows: 24 }, requestRender: loaded }, context.ui.theme, {}, () => {});
+      try {
+        await ready;
+        rendered = component.render(100).join("\n");
+      } finally {
+        component.dispose();
+      }
+    };
+
+    const footer = Promise.withResolvers<string>();
+    const setStatus = mock.context.ui.setStatus;
+    mock.context.ui.setStatus = (key, status) => {
+      setStatus(key, status);
+      if (status?.startsWith("OpenCode Go ") && !status.endsWith("loading…")) footer.resolve(status);
+    };
+    const timeout = setTimeout(() => footer.reject(new Error("OpenCode Go footer did not update")), 2000);
+    try {
+      await harness.handlers.get("session_start")?.({}, mock.context);
+      expect(await footer.promise).toMatch(/OpenCode Go 5h .*25% W .*45% M .*65%/);
+
+      await harness.commands.get("usage")?.handler("", mock.context);
+      expect(rendered).toContain("OpenCode Go ✓");
+      expect(rendered).toMatch(/5-hour .*25%/);
+      expect(rendered).toMatch(/Weekly .*45%/);
+      expect(rendered).toMatch(/Monthly .*65%/);
+    } finally {
+      clearTimeout(timeout);
+      await harness.handlers.get("session_shutdown")?.({}, mock.context);
+    }
+  });
+
   it("polls OpenRouter through Pi auth and emits financial usage", async () => {
     const fetchFn = (async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
