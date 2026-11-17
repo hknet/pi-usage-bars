@@ -40,7 +40,7 @@ Google Gemini CLI and Google Antigravity are not supported because Pi removed th
 
 ## Requirements
 
-- Pi 0.84.2 or newer (tested with Pi 1.3.0)
+- Pi 0.84.2 or newer (tested with Pi 1.5.2)
 - Node.js 22.19 or newer when using the npm-distributed Pi CLI
 
 Authenticate providers through Pi's `/login` command. The extension resolves credentials through Pi's provider API; it does not read or write `auth.json` itself.
@@ -103,10 +103,10 @@ Run `/usage` to open a searchable list of configured supported providers. The se
 Pass `--usage` to print one JSON line for the active model provider and exit without opening the usage UI. This is also useful as a loader and credential smoke test:
 
 ```powershell
-pi --no-extensions -e C:\hk\code\pi-usage-bars\extensions\usage-bars\index.ts --usage
+pi --print --no-session --no-extensions -e C:\hk\code\pi-usage-bars\extensions\usage-bars\index.ts --usage
 ```
 
-The result has `status` set to `ok`, `unconfigured`, `unsupported`, or `error`. A supported provider routed through another host reports `unsupported`, unless the host is a supported gateway. No credential is included in the output.
+The result has `status` set to `ok`, `unconfigured`, `unsupported`, or `error`. A supported provider routed through another host reports `unsupported`, unless the host is a supported gateway. No credential is included in the output. In print mode, Pi writes extension logs—including this JSON line—to stderr; use `2>&1` to capture it. In JSON mode, stdout remains Pi's event stream and the usage line is still written to stderr.
 
 ## Endpoint configuration
 
