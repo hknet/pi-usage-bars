@@ -29,6 +29,7 @@ import {
   fetchKimiUsage,
   fetchMiniMaxUsage,
   fetchMoonshotBalance,
+  fetchOpenCodeGoUsage,
   fetchOpenRouterUsage,
   fetchVercelCredits,
   fetchXaiUsage,
@@ -39,6 +40,7 @@ import {
   providerToPiProviderId,
   resolveUsageEndpoints,
   type AccountBalance,
+  type AccountQuota,
   type AccountSpend,
   type FetchLike,
   type ProviderKey,
@@ -65,6 +67,7 @@ const PROVIDERS: readonly ProviderKey[] = [
   "minimax",
   "minimax-cn",
   "openrouter",
+  "opencode-go",
   "deepseek",
   "moonshot",
   "moonshot-cn",
@@ -83,6 +86,7 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   minimax: "MiniMax Coding Plan (Global)",
   "minimax-cn": "MiniMax Coding Plan (China)",
   openrouter: "OpenRouter",
+  "opencode-go": "OpenCode Go",
   deepseek: "DeepSeek",
   moonshot: "Moonshot/Kimi API (Global)",
   "moonshot-cn": "Moonshot/Kimi API (China)",
@@ -91,6 +95,45 @@ const PROVIDER_LABELS: Record<ProviderKey, string> = {
   fireworks: "Fireworks",
   xai: "xAI",
 };
+
+interface QuotaBar {
+  label: string;
+  prefix: string;
+  percent: number;
+  quota?: AccountQuota;
+  reset?: string;
+}
+
+function quotaBars(data: UsageData): QuotaBar[] {
+  if (data.quotaHidden) return [];
+
+  const bars: QuotaBar[] = [];
+  if (!data.sessionHidden) {
+    const prefix = data.sessionLabel === "5-hour" ? "5h"
+      : data.sessionLabel === "Interval" ? "I"
+      : data.sessionLabel === "Key limit" ? "L" : "S";
+    bars.push({
+      label: data.sessionLabel ?? "Session",
+      prefix,
+      percent: data.session,
+      quota: data.sessionQuota,
+      reset: data.sessionResetsIn,
+    });
+  }
+  if (!data.weeklyHidden) {
+    bars.push({
+      label: data.weeklyLabel ?? "Weekly",
+      prefix: "W",
+      percent: data.weekly,
+      quota: data.weeklyQuota,
+      reset: data.weeklyResetsIn,
+    });
+  }
+  if (data.monthly !== undefined) {
+    bars.push({ label: "Monthly", prefix: "M", percent: data.monthly, reset: data.monthlyResetsIn });
+  }
+  return bars;
+}
 
 function formatAccountBalance(balance: AccountBalance): string {
   return `${balance.label} · ${formatFinancialAmount(balance.amount, balance.unit)}`;
@@ -286,38 +329,15 @@ class UsageSelectorComponent extends Container implements Focusable {
     if (item.data.error) {
       this.listContainer.addChild(new Text(indent + theme.fg("error", item.data.error), 0, 0));
     } else {
-      const session = clampPercent(item.data.session);
-      const weekly = clampPercent(item.data.weekly);
-      const sessionReset = item.data.sessionResetsIn
-        ? theme.fg("dim", `  resets in ${item.data.sessionResetsIn}`)
-        : "";
-      const weeklyReset = item.data.weeklyResetsIn
-        ? theme.fg("dim", `  resets in ${item.data.weeklyResetsIn}`)
-        : "";
-      const sessionLabel = (item.data.sessionLabel ?? "Session").slice(0, 9).padEnd(10);
-      const weeklyLabel = (item.data.weeklyLabel ?? "Weekly").slice(0, 9).padEnd(10);
-
-      if (!item.data.quotaHidden) {
-        if (!item.data.sessionHidden) {
-          this.listContainer.addChild(new Text(
-            indent + theme.fg("muted", sessionLabel) + this.renderBar(session) + " " +
-              theme.fg(colorForPercent(session), formatPercent(item.data.session).padStart(4)) +
-              (item.data.sessionQuota ? theme.fg("muted", `  ${formatQuota(item.data.sessionQuota)}`) : "") +
-              sessionReset,
-            0,
-            0,
-          ));
-        }
-        if (!item.data.weeklyHidden) {
-          this.listContainer.addChild(new Text(
-            indent + theme.fg("muted", weeklyLabel) + this.renderBar(weekly) + " " +
-              theme.fg(colorForPercent(weekly), formatPercent(item.data.weekly).padStart(4)) +
-              (item.data.weeklyQuota ? theme.fg("muted", `  ${formatQuota(item.data.weeklyQuota)}`) : "") +
-              weeklyReset,
-            0,
-            0,
-          ));
-        }
+      for (const { label, percent, quota, reset } of quotaBars(item.data)) {
+        this.listContainer.addChild(new Text(
+          indent + theme.fg("muted", label.slice(0, 9).padEnd(10)) + this.renderBar(percent) + " " +
+            theme.fg(colorForPercent(clampPercent(percent)), formatPercent(percent).padStart(4)) +
+            (quota ? theme.fg("muted", `  ${formatQuota(quota)}`) : "") +
+            (reset ? theme.fg("dim", `  resets in ${reset}`) : ""),
+          0,
+          0,
+        ));
       }
       if (item.data.accountBalance) {
         this.listContainer.addChild(new Text(
@@ -505,6 +525,7 @@ export default function (pi: ExtensionAPI, dependencies: UsageBarsDependencies =
     minimax: null,
     "minimax-cn": null,
     openrouter: null,
+    "opencode-go": null,
     deepseek: null,
     moonshot: null,
     "moonshot-cn": null,
@@ -576,33 +597,13 @@ export default function (pi: ExtensionAPI, dependencies: UsageBarsDependencies =
       return;
     }
 
-    const session = clampPercent(data.session);
-    const weekly = clampPercent(data.weekly);
-    const sessionPrefix = data.sessionLabel === "5-hour"
-      ? "5h "
-      : data.sessionLabel === "Interval"
-        ? "I "
-        : data.sessionLabel === "Key limit"
-          ? "L "
-          : "S ";
-    const quotaLanes: string[] = [];
-    if (!data.sessionHidden) {
-      quotaLanes.push(
-        theme.fg("muted", sessionPrefix) + renderBar(theme, session) + " " + renderPercent(theme, data.session) +
-          (data.sessionQuota ? theme.fg("muted", ` ${formatQuota(data.sessionQuota, true)}`) : "") +
-          (data.sessionResetsIn ? theme.fg("dim", ` ⟳ ${data.sessionResetsIn}`) : ""),
-      );
-    }
-    if (!data.weeklyHidden) {
-      quotaLanes.push(
-        theme.fg("muted", "W ") + renderBar(theme, weekly) + " " + renderPercent(theme, data.weekly) +
-          (data.weeklyQuota ? theme.fg("muted", ` ${formatQuota(data.weeklyQuota, true)}`) : "") +
-          (data.weeklyResetsIn ? theme.fg("dim", ` ⟳ ${data.weeklyResetsIn}`) : ""),
-      );
-    }
+    const quotas = quotaBars(data).map(({ prefix, percent, quota, reset }) =>
+      theme.fg("muted", `${prefix} `) + renderBar(theme, percent) + " " + renderPercent(theme, percent) +
+      (quota ? theme.fg("muted", ` ${formatQuota(quota, true)}`) : "") +
+      (reset ? theme.fg("dim", ` ⟳ ${reset}`) : ""));
     const status =
       theme.fg("dim", `${label} `) +
-      quotaLanes.join(" ") +
+      quotas.join(" ") +
       (data.accountBalance ? theme.fg("muted", ` · ${formatAccountBalance(data.accountBalance)}`) : "") +
       (data.accountSpend?.monthly === undefined
         ? ""
@@ -691,6 +692,7 @@ export default function (pi: ExtensionAPI, dependencies: UsageBarsDependencies =
       case "minimax": return fetchMiniMaxUsage(token, "minimax", config);
       case "minimax-cn": return fetchMiniMaxUsage(token, "minimax-cn", config);
       case "openrouter": return fetchOpenRouterUsage(token, config);
+      case "opencode-go": return fetchOpenCodeGoUsage(token, config);
       case "deepseek": return fetchDeepSeekBalance(token, config);
       case "moonshot": return fetchMoonshotBalance(token, "moonshot", config);
       case "moonshot-cn": return fetchMoonshotBalance(token, "moonshot-cn", config);

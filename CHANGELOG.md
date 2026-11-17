@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added OpenCode Go support: 5-hour, weekly, and monthly quota usage with reset times.
+
 ## [0.8.0] - 2026-11-17
 
 ### Added

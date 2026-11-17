@@ -11,6 +11,7 @@ export type ProviderKey =
   | "minimax"
   | "minimax-cn"
   | "openrouter"
+  | "opencode-go"
   | "deepseek"
   | "moonshot"
   | "moonshot-cn"
@@ -27,6 +28,7 @@ export type PiProviderId =
   | "minimax"
   | "minimax-cn"
   | "openrouter"
+  | "opencode-go"
   | "deepseek"
   | "moonshotai"
   | "moonshotai-cn"
@@ -60,6 +62,7 @@ export interface AccountQuota {
 export interface UsageData {
   session: number;
   weekly: number;
+  monthly?: number;
   sessionQuota?: AccountQuota;
   weeklyQuota?: AccountQuota;
   quotaHidden?: boolean;
@@ -69,8 +72,10 @@ export interface UsageData {
   accountSpend?: AccountSpend;
   sessionResetsIn?: string;
   weeklyResetsIn?: string;
+  monthlyResetsIn?: string;
   sessionResetsAt?: string;
   weeklyResetsAt?: string;
+  monthlyResetsAt?: string;
   extraSpend?: number;
   extraLimit?: number;
   sessionLabel?: string;
@@ -487,6 +492,45 @@ export function extractUsageFromPayload(payload: unknown): { session: number; we
   const session = sessionCandidates.map(readPercentCandidate).find((candidate) => candidate !== null);
   const weekly = weeklyCandidates.map(readPercentCandidate).find((candidate) => candidate !== null);
   return session === undefined || weekly === undefined ? null : normalizeUsagePair(session, weekly);
+}
+
+export function parseOpenCodeGoUsage(payload: unknown, nowMs = Date.now()): UsageData | null {
+  const usage = asObject(asObject(payload)?.usage);
+  const window = (key: string) => {
+    const entry = asObject(usage?.[key]);
+    if (entry?.status !== "ok" && entry?.status !== "rate-limited") return undefined;
+    const percent = entry.percent;
+    if (typeof percent !== "number" || !Number.isFinite(percent) || percent < 0) return undefined;
+    const resetsAt = normalizeIsoDate(entry.resetsAt);
+    return { percent, resetsAt, resetsIn: resetsAt && formatResetsAt(resetsAt, nowMs) };
+  };
+  const rolling = window("rolling");
+  const weekly = window("weekly");
+  const monthly = window("monthly");
+  if (!rolling && !weekly && !monthly) return null;
+  return {
+    session: rolling?.percent ?? 0,
+    sessionLabel: "5-hour",
+    sessionHidden: !rolling,
+    sessionResetsAt: rolling?.resetsAt,
+    sessionResetsIn: rolling?.resetsIn,
+    weekly: weekly?.percent ?? 0,
+    weeklyHidden: !weekly,
+    weeklyResetsAt: weekly?.resetsAt,
+    weeklyResetsIn: weekly?.resetsIn,
+    ...(monthly && {
+      monthly: monthly.percent, monthlyResetsAt: monthly.resetsAt, monthlyResetsIn: monthly.resetsIn,
+    }),
+  };
+}
+
+export async function fetchOpenCodeGoUsage(token: string, config: RequestConfig = {}): Promise<UsageData> {
+  const result = await requestJson("https://opencode.ai/zen/go/v1/usage", {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    redirect: "error",
+  }, config);
+  if (!result.ok) return { session: 0, weekly: 0, error: result.error };
+  return parseOpenCodeGoUsage(result.data) ?? { session: 0, weekly: 0, error: "no OpenCode Go quota windows returned" };
 }
 
 function hydrateUsageResets(usage: UsageData, nowMs = Date.now()): UsageData {
@@ -1551,6 +1595,7 @@ const PROVIDER_HOSTS: Record<ProviderKey, readonly string[]> = {
   minimax: ["api.minimax.io"],
   "minimax-cn": ["api.minimaxi.com"],
   openrouter: ["openrouter.ai"],
+  "opencode-go": ["opencode.ai"],
   deepseek: ["api.deepseek.com"],
   moonshot: ["api.moonshot.ai"],
   "moonshot-cn": ["api.moonshot.cn"],
@@ -1624,6 +1669,7 @@ function providerFromId(providerId: string | undefined): ProviderKey | null {
     case "anthropic": return "claude";
     case "zai": return "zai";
     case "zai-coding-cn": return "zai-cn";
+    case "opencode-go": return "opencode-go";
     case "kimi-coding": return "kimi";
     case "minimax": return "minimax";
     case "minimax-cn": return "minimax-cn";
@@ -1645,6 +1691,7 @@ export function providerToPiProviderId(provider: ProviderKey): PiProviderId {
     case "claude": return "anthropic";
     case "zai": return "zai";
     case "zai-cn": return "zai-coding-cn";
+    case "opencode-go": return "opencode-go";
     case "kimi": return "kimi-coding";
     case "minimax": return "minimax";
     case "minimax-cn": return "minimax-cn";
@@ -1726,6 +1773,7 @@ export async function fetchAllUsages(
     minimax: null,
     "minimax-cn": null,
     openrouter: null,
+    "opencode-go": null,
     deepseek: null,
     moonshot: null,
     "moonshot-cn": null,
@@ -1760,6 +1808,7 @@ export async function fetchAllUsages(
     assign("minimax-cn", fetchMiniMaxUsage(tokens["minimax-cn"], "minimax-cn", { ...config, endpoints }));
   }
   if (tokens.openrouter) assign("openrouter", fetchOpenRouterUsage(tokens.openrouter, { ...config, endpoints }));
+  if (tokens["opencode-go"]) assign("opencode-go", fetchOpenCodeGoUsage(tokens["opencode-go"], config));
   if (tokens.deepseek) assign("deepseek", fetchDeepSeekBalance(tokens.deepseek, { ...config, endpoints }));
   if (tokens.moonshot) assign("moonshot", fetchMoonshotBalance(tokens.moonshot, "moonshot", { ...config, endpoints }));
   if (tokens["moonshot-cn"]) {
