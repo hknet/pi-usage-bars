@@ -665,6 +665,33 @@ describe("provider fetchers", () => {
     expect(requestHeaders).toMatchObject({ Authorization: "Bearer sk-kimi-test", "User-Agent": "KimiCLI/1.5" });
   });
 
+  it("parses Kimi For Coding usages-object responses", () => {
+    const payload = {
+      limits: [{
+        window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+        detail: {
+          limit: "100",
+          used: "2",
+          remaining: "98",
+          resetTime: "2026-11-22T20:28:59.671808Z",
+        },
+      }],
+      usages: {
+        limit_5h: { used_ratio: 0.0171, reset_time: "2026-11-22T20:28:58Z" },
+        limit_month_total: { used_ratio: 0.4114, reset_time: "2026-12-02T00:00:00Z" },
+        limit_month_code: { used_ratio: 0.0021, reset_time: "2026-12-02T00:00:00Z" },
+      },
+    };
+    expect(extractKimiUsageFromPayload(payload, Date.parse("2026-11-22T18:00:00Z"))).toMatchObject({
+      session: 1.71,
+      weekly: 41.14,
+      sessionLabel: "5-hour",
+      weeklyLabel: "Weekly",
+      sessionResetsAt: "2026-11-22T20:28:58Z",
+      weeklyResetsAt: "2026-12-02T00:00:00Z",
+    });
+  });
+
   it("parses MiniMax model-remains and multi-service responses", () => {
     const now = Date.parse("2026-02-18T12:00:00.000Z");
     const modelRemains = extractMiniMaxUsageFromPayload({ data: { model_remains: [{

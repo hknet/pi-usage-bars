@@ -763,6 +763,25 @@ function resetFromRemains(value: unknown, nowMs: number): string | undefined {
 export function extractKimiUsageFromPayload(payload: unknown, nowMs = Date.now()): UsageData | null {
   const root = asObject(payload);
   if (!root) return null;
+  // Current Kimi Coding API shape: `usages` is an object keyed by limit name
+  // (limit_5h, limit_month_total, limit_month_code) with `used_ratio` (0..1)
+  // and `reset_time` fields, alongside the legacy `limits` array.
+  const usagesObject = Array.isArray(root.usages) ? null : asObject(root.usages);
+  if (usagesObject) {
+    const fiveHour = asObject(usagesObject.limit_5h ?? usagesObject.limit5h);
+    const monthly = asObject(usagesObject.limit_month_total) ?? asObject(usagesObject.limit_month_code);
+    const sessionRatio = readPercentCandidate(readNumber(fiveHour?.used_ratio ?? fiveHour?.usedRatio));
+    const weeklyRatio = readPercentCandidate(readNumber(monthly?.used_ratio ?? monthly?.usedRatio));
+    if (sessionRatio !== null && weeklyRatio !== null) {
+      return hydrateUsageResets({
+        ...normalizeUsagePair(sessionRatio, weeklyRatio),
+        sessionLabel: "5-hour",
+        weeklyLabel: "Weekly",
+        sessionResetsAt: normalizeIsoDate(fiveHour?.reset_time ?? fiveHour?.resetTime),
+        weeklyResetsAt: normalizeIsoDate(monthly?.reset_time ?? monthly?.resetTime),
+      }, nowMs);
+    }
+  }
   const webUsages = Array.isArray(root.usages) ? root.usages : undefined;
   const codingUsage = webUsages?.map(asObject).find((entry) =>
     String(entry?.scope ?? "").toUpperCase() === "FEATURE_CODING") ?? root;
