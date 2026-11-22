@@ -594,8 +594,9 @@ export default function (pi: ExtensionAPI, dependencies: UsageBarsDependencies =
       );
     }
     if (!data.weeklyHidden) {
+      const weeklyPrefix = data.weeklyLabel === "Monthly" ? "M " : "W ";
       quotaLanes.push(
-        theme.fg("muted", "W ") + renderBar(theme, weekly) + " " + renderPercent(theme, data.weekly) +
+        theme.fg("muted", weeklyPrefix) + renderBar(theme, weekly) + " " + renderPercent(theme, data.weekly) +
           (data.weeklyQuota ? theme.fg("muted", ` ${formatQuota(data.weeklyQuota, true)}`) : "") +
           (data.weeklyResetsIn ? theme.fg("dim", ` ⟳ ${data.weeklyResetsIn}`) : ""),
       );
