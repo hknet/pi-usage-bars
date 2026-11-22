@@ -776,7 +776,7 @@ export function extractKimiUsageFromPayload(payload: unknown, nowMs = Date.now()
       return hydrateUsageResets({
         ...normalizeUsagePair(sessionRatio, weeklyRatio),
         sessionLabel: "5-hour",
-        weeklyLabel: "Weekly",
+        weeklyLabel: "Monthly",
         sessionResetsAt: normalizeIsoDate(fiveHour?.reset_time ?? fiveHour?.resetTime),
         weeklyResetsAt: normalizeIsoDate(monthly?.reset_time ?? monthly?.resetTime),
       }, nowMs);

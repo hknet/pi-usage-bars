@@ -686,7 +686,7 @@ describe("provider fetchers", () => {
       session: 1.71,
       weekly: 41.14,
       sessionLabel: "5-hour",
-      weeklyLabel: "Weekly",
+      weeklyLabel: "Monthly",
       sessionResetsAt: "2026-11-22T20:28:58Z",
       weeklyResetsAt: "2026-12-02T00:00:00Z",
     });
